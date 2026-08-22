@@ -55,8 +55,8 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
         return [], [], candidate_leads, None, None
 
     with sync_playwright() as p:
-        # Running visible at high speed so you can watch it work!
-        browser = p.chromium.launch(headless=False, slow_mo=100)
+        # Change headless to True for cloud deployment
+        browser = p.chromium.launch(headless=True, slow_mo=100)
         context = browser.new_context(viewport={"width": 1400, "height": 900})
         page = context.new_page()
 

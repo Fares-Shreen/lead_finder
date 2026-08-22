@@ -5,13 +5,19 @@ import asyncio
 import pandas as pd
 import streamlit as st
 
-# --- Windows asyncio fix for Playwright ---
+# --- Force Streamlit Cloud to install the Chromium browser ---
+os.system("playwright install chromium")
+os.system("playwright install-deps chromium")
+
+# --- Windows asyncio fix for Playwright (Kept for local testing) ---
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 import dedupe
 import config
 from search_engine import process
+
+# ... rest of your code ...
 
 st.set_page_config(
     page_title="Company Lead Finder",
