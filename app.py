@@ -24,6 +24,17 @@ st.set_page_config(
     page_icon="🔎",
     layout="wide" # Switched to wide layout to better fit the data tables
 )
+hide_streamlit_style = """
+    <style>
+    /* Hides the top-right toolbar (GitHub icon, Deploy button) */
+    div[data-testid="stToolbar"] {visibility: hidden;}
+    /* Hides the default hamburger menu */
+    #MainMenu {visibility: hidden;}
+    /* Hides the 'Made with Streamlit' footer */
+    footer {visibility: hidden;}
+    </style>
+"""
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 st.title("🔎 Company Lead Finder")
 st.caption(
