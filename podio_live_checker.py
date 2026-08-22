@@ -55,8 +55,11 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
         return [], [], candidate_leads, None, None
 
     with sync_playwright() as p:
-        # Change headless to True for cloud deployment
-        browser = p.chromium.launch(headless=True, slow_mo=100)
+        # Added arguments to prevent crashes on Streamlit Cloud Linux containers
+        browser = p.chromium.launch(
+            headless=True, 
+            args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
+        )
         context = browser.new_context(viewport={"width": 1400, "height": 900})
         page = context.new_page()
 
