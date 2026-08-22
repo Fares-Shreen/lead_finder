@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+output/
+clutch_debug.html
+clutch_playwright_debug.html
+.streamlit/secrets.toml
+
+# LOCAL-ONLY tool - never commit, uses real personal Podio login
+podio_export_local.py
+podio_exports/
