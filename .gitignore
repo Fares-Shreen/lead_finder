@@ -1,6 +1,5 @@
 __pycache__/
 *.pyc
-output/
 clutch_debug.html
 clutch_playwright_debug.html
 .streamlit/secrets.toml
