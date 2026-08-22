@@ -145,7 +145,4 @@ Everything that touches storage goes through `dedupe.py`. Replace:
 - `all_companies()` → your table's read query
 
 No changes needed anywhere else.
-set PODIO_EMAIL=faresshreen@aiesec.net
-set PODIO_PASSWORD=Alfara3na$
 py -m streamlit run app.py
-python podio_export_local.py
