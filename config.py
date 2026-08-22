@@ -32,7 +32,7 @@ SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "")
 # it later. Before you push, set ADMIN_PASSWORD as a Streamlit Cloud
 # "Secret" instead (same place as SERPAPI_KEY) so the real password
 # never lives in the source code.
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Alfara3na$")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "MCVPIGV$138$")
 
 # --- Networking ---
 REQUEST_TIMEOUT = 12          # seconds per HTTP request
