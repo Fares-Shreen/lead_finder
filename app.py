@@ -154,6 +154,11 @@ with tab_search:
 
             st.success(f"Pipeline Complete! {len(all_new_records)} brand new leads generated. Data pushed to Google Sheets.")
 
+            # --- ADD THIS LINE TO BACKUP THE MASTER DATABASE ---
+            dedupe.sync_to_google_sheets()
+
+            if all_new_records:
+                st.subheader("✨ Brand New Leads (Enriched)")
             if all_new_records:
                 st.subheader("✨ Brand New Leads (Enriched)")
                 st.dataframe(

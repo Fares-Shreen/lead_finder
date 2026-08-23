@@ -14,7 +14,15 @@ def _get_gspread_client():
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ]
+        
+        # Convert the Streamlit secrets to a dictionary
         creds_dict = dict(st.secrets["gcp_service_account"])
+        
+        # ---------------------------------------------------------
+        # THE FIX: Force literal '\n' text into actual line breaks
+        # ---------------------------------------------------------
+        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+        
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         client = gspread.authorize(creds)
         return client
