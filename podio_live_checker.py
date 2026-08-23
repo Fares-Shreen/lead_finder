@@ -2,10 +2,69 @@ import os
 import time
 from datetime import datetime
 import pandas as pd
+import gspread
+from google.oauth2.service_account import Credentials
 from playwright.sync_api import sync_playwright
+import streamlit as st
+
+def _get_gspread_client():
+    """Initializes Google Sheets client using Streamlit secrets."""
+    try:
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds_dict = dict(st.secrets["gcp_service_account"])
+        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
+        client = gspread.authorize(creds)
+        return client
+    except Exception as e:
+        print(f"Google Sheets Auth Error: {e}")
+        return None
+
+def _sync_to_google_sheet(new_list, sheet_tab_name):
+    """Pulls data from Google Sheet, merges new data, removes duplicates, and updates."""
+    client = _get_gspread_client()
+    
+    # Fail gracefully if secrets aren't set up yet
+    if not client or "sheet" not in st.secrets:
+        return None
+
+    sheet_name = st.secrets["sheet"]["name"]
+
+    try:
+        sh = client.open(sheet_name)
+        try:
+            worksheet = sh.worksheet(sheet_tab_name)
+        except gspread.exceptions.WorksheetNotFound:
+            worksheet = sh.add_worksheet(title=sheet_tab_name, rows=100, cols=20)
+
+        existing_data = worksheet.get_all_records()
+        
+        if new_list:
+            df_new = pd.DataFrame(new_list)
+            if "Status" not in df_new.columns:
+                df_new["Status"] = "Pending"
+
+            if existing_data:
+                df_old = pd.DataFrame(existing_data)
+                df_combined = pd.concat([df_old, df_new], ignore_index=True)
+                df_combined.drop_duplicates(subset=["Company Name"], keep="first", inplace=True)
+            else:
+                df_combined = df_new
+
+            worksheet.clear()
+            worksheet.update([df_combined.columns.values.tolist()] + df_combined.values.tolist())
+            return df_combined
+        elif existing_data:
+            return pd.DataFrame(existing_data)
+        
+        return pd.DataFrame()
+    except Exception as e:
+        print(f"Error syncing with Google Sheets: {e}")
+        return None
 
 def _parse_days_ago(iso_string):
-    """Converts Podio's ISO timestamp into 'days ago' integer."""
     if not iso_string or iso_string == "Not Found":
         return 9999
     try:
@@ -16,7 +75,6 @@ def _parse_days_ago(iso_string):
         return 9999
 
 def _extract_podio_data(page):
-    """Uses the exact HTML structure we found to extract the active fields."""
     committee = page.evaluate('''() => {
         let field = Array.from(document.querySelectorAll('li.category-field')).find(el => el.innerText.includes('Local Committee'));
         if (field) {
@@ -55,7 +113,6 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
         return [], [], candidate_leads, None, None
 
     with sync_playwright() as p:
-        # Added arguments to prevent crashes on Streamlit Cloud Linux containers
         browser = p.chromium.launch(
             headless=True, 
             args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"]
@@ -82,9 +139,6 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
             if progress_cb: progress_cb(f"🔎 Checking Podio for: {name}")
 
             try:
-                # ==========================================
-                # STEP 1: SEARCH DEALS APP
-                # ==========================================
                 try:
                     page.goto("https://podio.com/aiesecglobal/ams-for-aiesec-in-egypt/apps/deals", wait_until="domcontentloaded")
                 except:
@@ -105,7 +159,6 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
                     time.sleep(4)
 
                     committee, stage, timestamps = _extract_podio_data(page)
-                    # For Deals, we use the LAST comment (newest activity)
                     last_activity = timestamps[-1] if timestamps else None
                     days_ago = _parse_days_ago(last_activity)
 
@@ -123,13 +176,11 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
                                 "Deal Stage": stage,
                                 "Last Activity": last_activity or "No Comments",
                                 "Days Inactive": days_ago,
-                                "Action": "Apply to get this account"
+                                "Action": "Apply to get this account",
+                                "Status": "Pending"
                             })
-                    continue # Skip to the next lead
+                    continue
 
-                # ==========================================
-                # STEP 2: SEARCH COMPANIES APP
-                # ==========================================
                 try:
                     page.goto("https://podio.com/aiesecglobal/ams-for-aiesec-in-egypt/apps/companies", wait_until="domcontentloaded")
                 except:
@@ -150,13 +201,11 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
                     time.sleep(4)
 
                     committee, stage, timestamps = _extract_podio_data(page)
-                    # For Companies, we use the FIRST comment (oldest activity)
                     first_activity = timestamps[0] if timestamps else None
                     days_ago = _parse_days_ago(first_activity)
 
                     if progress_cb: progress_cb(f"  🟢 Found in Companies! (LC: {committee}, Inactive: {days_ago} days)")
 
-                    # Applies to ALL LCs if inactive > 15 days
                     if days_ago > 15:
                         excel_2_companies_to_take.append({
                             "Company Name": name,
@@ -164,51 +213,22 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
                             "Local Committee": committee,
                             "First Activity Date": first_activity or "No Comments",
                             "Days Since Activity": days_ago,
-                            "Action": "Company we can take"
+                            "Action": "Company we can take",
+                            "Status": "Pending"
                         })
-                    continue # Skip to the next lead
+                    continue
 
-                # ==========================================
-                # STEP 3: NOT FOUND ANYWHERE -> NEW LEAD
-                # ==========================================
                 if progress_cb: progress_cb(f"  ✨ Genuine New Lead!")
                 new_leads_to_enrich.append(lead)
 
             except Exception as e:
                 if progress_cb: progress_cb(f"  ❌ Error checking {name}: {e}")
-                new_leads_to_enrich.append(lead) # Failsafe: treat as new lead if Podio glitches
+                new_leads_to_enrich.append(lead)
 
         browser.close()
 
-    # === REPLACE EVERYTHING AFTER browser.close() WITH THIS ===
+    # PUSH TO GOOGLE SHEETS!
+    _sync_to_google_sheet(excel_1_deal_accounts, "Excel_1_Deals")
+    _sync_to_google_sheet(excel_2_companies_to_take, "Excel_2_Companies")
 
-    # Save outputs with persistence, deduplication, and a Status column
-    OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-
-    def _save_persistent_excel(new_list, filename):
-        path = os.path.join(OUTPUT_DIR, filename)
-        
-        if not new_list:
-            # If no new data, just return the path if it already exists
-            return path if os.path.exists(path) else None
-
-        df_new = pd.DataFrame(new_list)
-        df_new["Status"] = "Pending"  # Add the default status for the UI dropdown
-
-        if os.path.exists(path):
-            df_old = pd.read_excel(path)
-            # Combine old and new data
-            df_combined = pd.concat([df_old, df_new], ignore_index=True)
-            # Drop duplicates by Company Name. Keep "first" so we don't overwrite existing "Checked" statuses!
-            df_combined.drop_duplicates(subset=["Company Name"], keep="first", inplace=True)
-        else:
-            df_combined = df_new
-
-        df_combined.to_excel(path, index=False)
-        return path
-
-    path1 = _save_persistent_excel(excel_1_deal_accounts, "excel_1_deal_accounts.xlsx")
-    path2 = _save_persistent_excel(excel_2_companies_to_take, "excel_2_companies_to_take.xlsx")
-
-    return excel_1_deal_accounts, excel_2_companies_to_take, new_leads_to_enrich, path1, path2
+    return excel_1_deal_accounts, excel_2_companies_to_take, new_leads_to_enrich, "Google Sheets (Excel 1)", "Google Sheets (Excel 2)"

@@ -7,7 +7,6 @@ import streamlit as st
 
 # --- Force Streamlit Cloud to install the Chromium browser ---
 os.system("playwright install chromium")
-os.system("playwright install-deps chromium")
 
 # --- Windows asyncio fix for Playwright (Kept for local testing) ---
 if sys.platform == "win32":
@@ -16,21 +15,18 @@ if sys.platform == "win32":
 import dedupe
 import config
 from search_engine import process
-
-# ... rest of your code ...
+import podio_live_checker
 
 st.set_page_config(
     page_title="Company Lead Finder",
     page_icon="🔎",
-    layout="wide" # Switched to wide layout to better fit the data tables
+    layout="wide" 
 )
+
 hide_streamlit_style = """
     <style>
-    /* Hides the top-right toolbar (GitHub icon, Deploy button) */
     div[data-testid="stToolbar"] {visibility: hidden;}
-    /* Hides the default hamburger menu */
     #MainMenu {visibility: hidden;}
-    /* Hides the 'Made with Streamlit' footer */
     footer {visibility: hidden;}
     </style>
 """
@@ -39,12 +35,8 @@ st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 st.title("🔎 Company Lead Finder")
 st.caption(
     "Search company directories, cross-reference Podio Deals & Companies in real-time, "
-    "and export actionable leads to Excel."
+    "and export actionable leads to Google Sheets."
 )
-
-# -------------------------------------------------------------------------
-# CREDENTIALS & API KEYS
-# -------------------------------------------------------------------------
 
 if "serpapi_key" not in st.session_state:
     st.session_state.serpapi_key = config.SERPAPI_KEY or ""
@@ -83,10 +75,9 @@ with col_podio:
 
 st.divider()
 
-# Create tabs for the workflow
 tab_search, tab_action_hub, tab_database, tab_admin = st.tabs([
     "🔎 Run Search", 
-    "✅ Team Action Hub (Excels)", 
+    "✅ Team Action Hub", 
     "📋 Local Database", 
     "🔐 Admin"
 ])
@@ -96,14 +87,12 @@ tab_search, tab_action_hub, tab_database, tab_admin = st.tabs([
 # -------------------------------------------------------------------------
 with tab_search:
     col1, col2 = st.columns(2)
-
     with col1:
         field_choices = st.multiselect(
             "Select Fields",
             ["Software", "IT", "Digital Marketing", "Sales", "Video Editing", "Accounting", "English Teaching", "French Teaching"],
             default=["Software"]
         )
-
     with col2:
         custom_fields_input = st.text_input("And/or enter custom fields", placeholder="e.g. Real Estate")
 
@@ -122,7 +111,6 @@ with tab_search:
         )
         num_per_source = st.slider("Results per source (per field)", 5, 50, 15)
         restart = st.checkbox("Start this field + location over from the beginning", value=False)
-        
         submitted = st.form_submit_button("🚀 Run Pipeline")
 
     status_box = st.empty()
@@ -164,7 +152,7 @@ with tab_search:
                     all_new_records.extend(new_records)
                     total_skipped += skipped_local
 
-            st.success(f"Pipeline Complete! {len(all_new_records)} brand new leads generated. Head over to the 'Team Action Hub' tab to see updated Excels.")
+            st.success(f"Pipeline Complete! {len(all_new_records)} brand new leads generated. Data pushed to Google Sheets.")
 
             if all_new_records:
                 st.subheader("✨ Brand New Leads (Enriched)")
@@ -184,76 +172,81 @@ with tab_search:
                     column_config={"Source Link": st.column_config.LinkColumn()}
                 )
 
-
 # -------------------------------------------------------------------------
-# TAB 2: TEAM ACTION HUB (INTERACTIVE EXCELS)
+# TAB 2: TEAM ACTION HUB (GOOGLE SHEETS SYNC)
 # -------------------------------------------------------------------------
 with tab_action_hub:
-    st.markdown("### Interactive Lead Management")
-    st.caption("Change the status to 'Checked' to turn the row green. Edits are automatically saved to the Excel files!")
+    st.markdown("### Team Action Hub (Cloud Google Sheets)")
+    st.caption("Changes are saved directly to the shared Google Sheet in real-time.")
 
-    OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "output")
-    path1 = os.path.join(OUTPUT_DIR, "excel_1_deal_accounts.xlsx")
-    path2 = os.path.join(OUTPUT_DIR, "excel_2_companies_to_take.xlsx")
+    client = podio_live_checker._get_gspread_client()
+    sheet_name = st.secrets["sheet"]["name"] if client and "sheet" in st.secrets else None
 
-    # Pandas Styler function to paint rows green
-    def highlight_checked(row):
-        if row.get("Status") == "Checked":
-            return ["background-color: #d4edda; color: #155724"] * len(row)
-        return [""] * len(row)
-
-    # --- Excel 1 ---
-    st.subheader("🟡 Excel 1: Deal Accounts (Apply to get)")
-    if os.path.exists(path1):
-        df1 = pd.read_excel(path1)
-        
-        # Interactive Editor
-        edited_df1 = st.data_editor(
-            df1.style.apply(highlight_checked, axis=1),
-            column_config={
-                "Deal Link": st.column_config.LinkColumn(),
-                "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Checked"], required=True)
-            },
-            use_container_width=True,
-            key="editor_ex1"
-        )
-        
-        # Save back to Excel if the user made changes
-        if not edited_df1.equals(df1):
-            edited_df1.to_excel(path1, index=False)
-            st.rerun() # Refresh to apply the green color instantly
+    if client and sheet_name:
+        try:
+            sh = client.open(sheet_name)
             
-        with open(path1, "rb") as f:
-            st.download_button("⬇ Download Excel 1", f, file_name="excel_1_deal_accounts.xlsx")
+            def highlight_checked(row):
+                if str(row.get("Status")) == "Checked":
+                    return ["background-color: #d4edda; color: #155724"] * len(row)
+                return [""] * len(row)
+
+            # --- Excel 1: Deals ---
+            st.subheader("🟡 Excel 1: Deal Accounts")
+            try:
+                ws1 = sh.worksheet("Excel_1_Deals")
+                data1 = ws1.get_all_records()
+                if data1:
+                    df1 = pd.DataFrame(data1)
+                    edited_df1 = st.data_editor(
+                        df1.style.apply(highlight_checked, axis=1),
+                        column_config={
+                            "Deal Link": st.column_config.LinkColumn(),
+                            "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Checked"], required=True)
+                        },
+                        use_container_width=True,
+                        key="editor_gsheets_1"
+                    )
+                    if not edited_df1.equals(df1):
+                        ws1.clear()
+                        ws1.update([edited_df1.columns.values.tolist()] + edited_df1.values.tolist())
+                        st.rerun()
+                else:
+                    st.info("No deal accounts found in Google Sheets yet.")
+            except Exception:
+                st.info("Tab 'Excel_1_Deals' not found or empty.")
+
+            st.divider()
+
+            # --- Excel 2: Companies ---
+            st.subheader("🟢 Excel 2: Companies to Take")
+            try:
+                ws2 = sh.worksheet("Excel_2_Companies")
+                data2 = ws2.get_all_records()
+                if data2:
+                    df2 = pd.DataFrame(data2)
+                    edited_df2 = st.data_editor(
+                        df2.style.apply(highlight_checked, axis=1),
+                        column_config={
+                            "Company Link": st.column_config.LinkColumn(),
+                            "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Checked"], required=True)
+                        },
+                        use_container_width=True,
+                        key="editor_gsheets_2"
+                    )
+                    if not edited_df2.equals(df2):
+                        ws2.clear()
+                        ws2.update([edited_df2.columns.values.tolist()] + edited_df2.values.tolist())
+                        st.rerun()
+                else:
+                    st.info("No companies to take found in Google Sheets yet.")
+            except Exception:
+                st.info("Tab 'Excel_2_Companies' not found or empty.")
+
+        except Exception as e:
+            st.error(f"Failed to connect to Google Sheets tabs: {e}")
     else:
-        st.info("No deal accounts found yet. Run a search to populate this list.")
-
-    st.divider()
-
-    # --- Excel 2 ---
-    st.subheader("🟢 Excel 2: Companies to Take")
-    if os.path.exists(path2):
-        df2 = pd.read_excel(path2)
-        
-        edited_df2 = st.data_editor(
-            df2.style.apply(highlight_checked, axis=1),
-            column_config={
-                "Company Link": st.column_config.LinkColumn(),
-                "Status": st.column_config.SelectboxColumn("Status", options=["Pending", "Checked"], required=True)
-            },
-            use_container_width=True,
-            key="editor_ex2"
-        )
-
-        if not edited_df2.equals(df2):
-            edited_df2.to_excel(path2, index=False)
-            st.rerun()
-
-        with open(path2, "rb") as f:
-            st.download_button("⬇ Download Excel 2", f, file_name="excel_2_companies_to_take.xlsx")
-    else:
-        st.info("No companies to take found yet. Run a search to populate this list.")
-
+        st.warning("⚠️ Google Sheets credentials are not configured in Streamlit Secrets.")
 
 # -------------------------------------------------------------------------
 # TAB 3 & 4: DATABASE AND ADMIN
