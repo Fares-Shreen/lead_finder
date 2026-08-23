@@ -15,5 +15,3 @@ libcairo2
 libasound2
 libatspi2.0-0
 libwayland-client0
-gspread
-google-auth

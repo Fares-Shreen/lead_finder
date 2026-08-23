@@ -5,3 +5,5 @@ beautifulsoup4>=4.12
 openpyxl>=3.1
 playwright>=1.40   # Clutch's Cloudflare fallback — after installing, also run:
                    #   playwright install chromium
+gspread
+google-auth
