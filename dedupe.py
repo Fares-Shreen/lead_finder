@@ -26,14 +26,27 @@ def _conn():
 
 
 def _get_gspread_client():
-    """Initializes Google Sheets client using Streamlit secrets."""
+    """Initializes Google Sheets client using Streamlit secrets with forced key cleanup."""
     try:
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+        import gspread
         creds_dict = dict(st.secrets["gcp_service_account"])
-        # Fix line breaks in the private key
-        creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
-        return gspread.authorize(creds)
+        
+        # ---------------------------------------------------------
+        # THE ULTIMATE KEY CLEANER
+        # ---------------------------------------------------------
+        key = creds_dict["private_key"]
+        
+        # 1. Convert literal text slashes to real newlines
+        key = key.replace("\\n", "\n") 
+        
+        # 2. Strip hidden spaces from the beginning/end of every single line
+        key = "\n".join([line.strip() for line in key.split("\n") if line.strip()])
+        
+        creds_dict["private_key"] = key
+        
+        # Use gspread's native dictionary login
+        return gspread.service_account_from_dict(creds_dict)
+        
     except Exception as e:
         print(f"Google Sheets Auth Error: {e}")
         return None
