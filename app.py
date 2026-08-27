@@ -40,6 +40,16 @@ col_api, col_podio = st.columns(2)
 with col_api:
     with st.expander("🔑 SerpApi Key", expanded=not st.session_state.serpapi_key):
         st.session_state.serpapi_key = st.text_input("SerpApi API Key", value=st.session_state.serpapi_key, type="password")
+        
+        # --- NEW INSTRUCTIONS & LINK ---
+        st.markdown("""
+        <small>
+        <b>How to get your free key:</b><br>
+        1. <a href="https://serpapi.com/users/sign_up" target="_blank">Click here to sign up on SerpApi</a>.<br>
+        2. Verify your email address.<br>
+        3. Copy the "Your Private API Key" from your dashboard and paste it above.
+        </small>
+        """, unsafe_allow_html=True)
 
 with col_podio:
     with st.expander("🔷 Podio Credentials", expanded=not (st.session_state.podio_email and st.session_state.podio_password)):
@@ -217,7 +227,6 @@ with tab_action_hub:
                         ws.clear()
                         ws.update([df.columns.values.tolist()] + df.values.tolist())
 
-                    # Quick toggle select input
                     col_sel, col_btn = st.columns([3, 1])
                     with col_sel:
                         company_names = df["Company Name"].tolist() if "Company Name" in df.columns else df.iloc[:, 0].tolist()
@@ -253,28 +262,36 @@ with tab_action_hub:
         st.warning("⚠️ Google Sheets credentials are not configured in Streamlit Secrets.")
 
 # =========================================================================
-# TAB 3: LOCAL DATABASE (SELECTION POP-UP & GREEN STATUS)
+# TAB 3: LOCAL DATABASE (ADMIN FILTER & GREEN STATUS)
 # =========================================================================
 with tab_database:
     dedupe.init_db()
-    existing = dedupe.all_companies(include_confirmed=True)
-    st.markdown(f"### 📋 Local Master Database ({len(existing)} companies)")
+    
+    is_admin = st.session_state.get("is_admin", False)
+    existing = dedupe.all_companies(include_confirmed=is_admin)
+    
+    if is_admin:
+        st.markdown(f"### 📋 Local Master Database - ADMIN VIEW ({len(existing)} companies)")
+        st.caption("You are viewing ALL companies, including the Checked (green) ones.")
+    else:
+        st.markdown(f"### 📋 Local Master Database ({len(existing)} pending companies)")
+        st.caption("Checked companies are hidden from this list. Log in via the Admin tab to view them.")
     
     if existing:
         df_local = pd.DataFrame(existing)
         df_local["Status"] = df_local["confirmed"].apply(lambda x: "Checked" if x == 1 else "Pending")
 
-        # Action Selector
         col_db_sel, col_db_btn = st.columns([3, 1])
         with col_db_sel:
             chosen_comp = st.selectbox("Select company to update status:", df_local["name"].tolist(), key="local_db_comp_select")
         with col_db_btn:
             st.write("")
             st.write("")
-            is_checked = df_local.loc[df_local["name"] == chosen_comp, "confirmed"].values[0] == 1
-            btn_txt = "Uncheck" if is_checked else "✅ Check & Lock"
-            if st.button(btn_txt, key="btn_local_db_confirm"):
-                confirm_status_dialog("local", chosen_comp, is_checked)
+            if chosen_comp:
+                is_checked = df_local.loc[df_local["name"] == chosen_comp, "confirmed"].values[0] == 1
+                btn_txt = "Uncheck" if is_checked else "✅ Check & Lock"
+                if st.button(btn_txt, key="btn_local_db_confirm"):
+                    confirm_status_dialog("local", chosen_comp, is_checked)
 
         display_cols = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
         clean_display_cols = [c for c in display_cols if c in df_local.columns]
@@ -289,6 +306,8 @@ with tab_database:
             },
             use_container_width=True
         )
+    else:
+        st.info("No available companies to display.")
 
 # =========================================================================
 # TAB 4: ADMIN CONTROLS
