@@ -40,8 +40,6 @@ col_api, col_podio = st.columns(2)
 with col_api:
     with st.expander("🔑 SerpApi Key", expanded=not st.session_state.serpapi_key):
         st.session_state.serpapi_key = st.text_input("SerpApi API Key", value=st.session_state.serpapi_key, type="password")
-        
-        # --- NEW INSTRUCTIONS & LINK ---
         st.markdown("""
         <small>
         <b>How to get your free key:</b><br>
@@ -262,7 +260,7 @@ with tab_action_hub:
         st.warning("⚠️ Google Sheets credentials are not configured in Streamlit Secrets.")
 
 # =========================================================================
-# TAB 3: LOCAL DATABASE (ADMIN FILTER & GREEN STATUS)
+# TAB 3: LOCAL DATABASE (PENDING COMPANIES FOR NORMAL USERS)
 # =========================================================================
 with tab_database:
     dedupe.init_db()
@@ -272,10 +270,10 @@ with tab_database:
     
     if is_admin:
         st.markdown(f"### 📋 Local Master Database - ADMIN VIEW ({len(existing)} companies)")
-        st.caption("You are viewing ALL companies, including the Checked (green) ones.")
+        st.caption("Admin mode: Viewing ALL companies including Checked ones.")
     else:
         st.markdown(f"### 📋 Local Master Database ({len(existing)} pending companies)")
-        st.caption("Checked companies are hidden from this list. Log in via the Admin tab to view them.")
+        st.caption("Checked companies are hidden from this view. Use the Admin panel to inspect checked leads.")
     
     if existing:
         df_local = pd.DataFrame(existing)
@@ -310,7 +308,7 @@ with tab_database:
         st.info("No available companies to display.")
 
 # =========================================================================
-# TAB 4: ADMIN CONTROLS
+# TAB 4: ADMIN CONTROLS (DASHBOARD BY DAY/WEEK/OVERALL + CHECKED LEADS)
 # =========================================================================
 with tab_admin:
     st.markdown("### 🔐 Admin Panel")
@@ -318,10 +316,88 @@ with tab_admin:
     
     if admin_pw and admin_pw == config.ADMIN_PASSWORD:
         st.session_state.is_admin = True
-        st.success("Admin mode active.")
+        st.success("Admin mode unlocked.")
         
-        tab_del, tab_dash, tab_danger = st.tabs(["🗑️ Delete from Local DB", "📊 Metrics", "⚠️ Danger Zone"])
+        tab_checked, tab_dash, tab_del, tab_danger = st.tabs([
+            "🟢 Checked Companies (Local DB)", 
+            "📊 Dashboard (Day / Week / Overall)", 
+            "🗑️ Delete from Local DB", 
+            "⚠️ Danger Zone"
+        ])
 
+        # --- ADMIN TAB 1: CHECKED COMPANIES VIEWER ---
+        with tab_checked:
+            st.subheader("🟢 Checked / Used Companies in Local Database")
+            st.caption("These companies are currently hidden from normal users.")
+            
+            checked_list = dedupe.confirmed_companies()
+            if checked_list:
+                df_checked = pd.DataFrame(checked_list)
+                df_checked["Status"] = "Checked"
+
+                col_chk_sel, col_chk_btn = st.columns([3, 1])
+                with col_chk_sel:
+                    comp_to_uncheck = st.selectbox("Select company to Uncheck (return to normal):", df_checked["name"].tolist(), key="admin_uncheck_select")
+                with col_chk_btn:
+                    st.write("")
+                    st.write("")
+                    if st.button("🔄 Uncheck Company", type="primary"):
+                        dedupe.update_company_status(comp_to_uncheck, False)
+                        st.success(f"Restored {comp_to_uncheck!r} to pending status.")
+                        time.sleep(0.5)
+                        st.rerun()
+
+                cols_to_show = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "checked_date", "found_at"]
+                clean_cols = [c for c in cols_to_show if c in df_checked.columns]
+                
+                st.dataframe(
+                    df_checked[clean_cols].style.apply(highlight_green, axis=1),
+                    column_config={
+                        "website": st.column_config.LinkColumn(),
+                        "source_url": st.column_config.LinkColumn(),
+                        "linkedin": st.column_config.LinkColumn(),
+                        "checked_date": st.column_config.TextColumn("Date Used")
+                    },
+                    use_container_width=True
+                )
+            else:
+                st.info("No companies are currently marked as Checked / Used in the Local Database.")
+
+        # --- ADMIN TAB 2: METRICS DASHBOARD (DAY / WEEK / OVERALL) ---
+        with tab_dash:
+            stats = dedupe.get_stats()
+            
+            st.subheader("📊 Performance & Activity Dashboard")
+            
+            dash_view = st.radio("Select Timeframe:", ["📅 Today (Per Day)", "🗓️ Last 7 Days (Per Week)", "🌐 Overall (All-Time)"], horizontal=True)
+            
+            if dash_view == "📅 Today (Per Day)":
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Searches Run Today", stats["searches"]["today"])
+                c2.metric("Companies Added Today", stats["companies"]["today"])
+                c3.metric("Leads Checked Today", stats["checked"]["today"])
+                c4.metric("Active Users Today", stats["users"]["today"])
+            elif dash_view == "🗓️ Last 7 Days (Per Week)":
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Searches (7 Days)", stats["searches"]["week"])
+                c2.metric("Companies Added (7 Days)", stats["companies"]["week"])
+                c3.metric("Leads Checked (7 Days)", stats["checked"]["week"])
+                c4.metric("Active Users (7 Days)", stats["users"]["week"])
+            else:
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Total Searches", stats["searches"]["overall"])
+                c2.metric("Total Companies in DB", stats["companies"]["overall"])
+                c3.metric("Total Checked Leads", stats["checked"]["overall"])
+                c4.metric("Total Unique Users", stats["users"]["overall"])
+
+            st.divider()
+            st.subheader("🕒 Recent Search Activity")
+            if stats["recent_searches"]:
+                st.dataframe(pd.DataFrame(stats["recent_searches"]), use_container_width=True)
+            else:
+                st.info("No search activity recorded yet.")
+
+        # --- ADMIN TAB 3: DELETE ---
         with tab_del:
             st.caption("Delete records from the master Local Database only (leaves Excel 1 & 2 untouched).")
             names = [c["name"] for c in dedupe.all_companies(include_confirmed=True)]
@@ -333,14 +409,7 @@ with tab_admin:
                     time.sleep(0.5)
                     st.rerun()
 
-        with tab_dash:
-            stats = dedupe.get_stats()
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Total Searches", stats["total_searches"])
-            c2.metric("Distinct Users", stats["distinct_users"])
-            c3.metric("Total in Database", stats["total_companies"])
-            c4.metric("Checked Leads", stats["confirmed_count"])
-
+        # --- ADMIN TAB 4: DANGER ZONE ---
         with tab_danger:
             st.error("Wiping the database will clear all saved companies and reset search progress.")
             if st.button("🧨 Wipe Local Database", type="primary"):

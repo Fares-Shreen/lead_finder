@@ -1,6 +1,6 @@
 """
-Hybrid Database: SQLite with Google Sheets sync.
-Tracks company status, confirmation dates, and admin modifications.
+Hybrid Database: Uses a local SQLite file for fast scraping memory, 
+and syncs to Google Sheets on boot, completion, and status updates.
 """
 import hashlib
 import sqlite3
@@ -58,7 +58,6 @@ def init_db():
                 source_url TEXT
             )
         """)
-        # Ensure checked_date column exists in older SQLite files
         try:
             c.execute("ALTER TABLE companies ADD COLUMN checked_date TEXT")
         except sqlite3.OperationalError:
@@ -228,8 +227,16 @@ def all_companies(include_confirmed: bool = False):
         rows = c.execute(f"SELECT {', '.join(cols)} FROM companies {where} ORDER BY found_at DESC").fetchall()
         return [dict(zip(cols, r)) for r in rows]
 
+def confirmed_companies():
+    """Returns only checked/used companies."""
+    cols = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "confirmed", "checked_date", "found_at", "podio_matched_title", "podio_link"]
+    with _conn() as c:
+        rows = c.execute(
+            f"SELECT {', '.join(cols)} FROM companies WHERE confirmed = 1 ORDER BY checked_date DESC, found_at DESC"
+        ).fetchall()
+        return [dict(zip(cols, r)) for r in rows]
+
 def update_company_status(name: str, confirmed: bool):
-    """Updates status and sets checked_date."""
     val = 1 if confirmed else 0
     date_str = datetime.now().strftime("%Y-%m-%d") if confirmed else ""
     with _conn() as c:
@@ -253,15 +260,37 @@ def log_search(field: str, location: str, sources: list, num_per_source: int, ap
         )
 
 def get_stats():
+    """Calculates metrics Per Day (Today), Per Week (7 Days), and Overall."""
     with _conn() as c:
-        total_searches = c.execute("SELECT COUNT(*) FROM search_log").fetchone()[0]
-        distinct_users = c.execute("SELECT COUNT(DISTINCT user_key_hash) FROM search_log").fetchone()[0]
-        total_companies = c.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
-        confirmed_count = c.execute("SELECT COUNT(*) FROM companies WHERE confirmed = 1").fetchone()[0]
-        recent = c.execute("SELECT field, location, sources, num_per_source, searched_at FROM search_log ORDER BY searched_at DESC LIMIT 20").fetchall()
+        # Searches
+        searches_total = c.execute("SELECT COUNT(*) FROM search_log").fetchone()[0]
+        searches_today = c.execute("SELECT COUNT(*) FROM search_log WHERE date(searched_at) = date('now')").fetchone()[0]
+        searches_week = c.execute("SELECT COUNT(*) FROM search_log WHERE date(searched_at) >= date('now', '-7 days')").fetchone()[0]
+        
+        # Companies
+        companies_total = c.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
+        companies_today = c.execute("SELECT COUNT(*) FROM companies WHERE date(found_at) = date('now')").fetchone()[0]
+        companies_week = c.execute("SELECT COUNT(*) FROM companies WHERE date(found_at) >= date('now', '-7 days')").fetchone()[0]
+
+        # Checked / Confirmed
+        checked_total = c.execute("SELECT COUNT(*) FROM companies WHERE confirmed = 1").fetchone()[0]
+        checked_today = c.execute("SELECT COUNT(*) FROM companies WHERE confirmed = 1 AND date(checked_date) = date('now')").fetchone()[0]
+        checked_week = c.execute("SELECT COUNT(*) FROM companies WHERE confirmed = 1 AND date(checked_date) >= date('now', '-7 days')").fetchone()[0]
+
+        # Distinct Users
+        users_total = c.execute("SELECT COUNT(DISTINCT user_key_hash) FROM search_log").fetchone()[0]
+        users_today = c.execute("SELECT COUNT(DISTINCT user_key_hash) FROM search_log WHERE date(searched_at) = date('now')").fetchone()[0]
+        users_week = c.execute("SELECT COUNT(DISTINCT user_key_hash) FROM search_log WHERE date(searched_at) >= date('now', '-7 days')").fetchone()[0]
+
+        recent = c.execute(
+            "SELECT field, location, sources, num_per_source, searched_at FROM search_log ORDER BY searched_at DESC LIMIT 20"
+        ).fetchall()
+
     return {
-        "total_searches": total_searches, "distinct_users": distinct_users,
-        "total_companies": total_companies, "confirmed_count": confirmed_count,
+        "searches": {"today": searches_today, "week": searches_week, "overall": searches_total},
+        "companies": {"today": companies_today, "week": companies_week, "overall": companies_total},
+        "checked": {"today": checked_today, "week": checked_week, "overall": checked_total},
+        "users": {"today": users_today, "week": users_week, "overall": users_total},
         "recent_searches": [dict(zip(["field", "location", "sources", "num_per_source", "searched_at"], r)) for r in recent],
     }
 
