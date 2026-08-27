@@ -41,7 +41,40 @@ def clean_domain(url: str) -> str:
         return parsed.netloc.replace("www.", "")
     except:
         return url
+import requests
+from urllib.parse import quote
 
+def podio_api_precheck(company_name: str) -> bool:
+    """
+    Pings the public Podio Webform search API. 
+    Returns True if Podio has data on this name (needs Playwright check).
+    Returns False if it is completely empty (brand new lead, skip Playwright).
+    """
+    if not company_name: return False
+    
+    # URL encode the company name for the API query
+    query = quote(company_name.strip())
+    url = f"https://podio.com/webforms/25879454/1936053/items_search?field_id=238040132&query={query}&limit=50"
+    
+    try:
+        res = requests.get(url, timeout=3)
+        if res.status_code == 200:
+            data = res.json()
+            # If the response is totally empty, it's a new lead
+            if not data:
+                return False
+            
+            # If the response has the 'app' structure and contains items
+            if isinstance(data, list) and len(data) > 0:
+                first_item = data[0]
+                if first_item.get("name") == "app" and len(first_item.get("contents", [])) > 0:
+                    return True # Data found! Send to Playwright.
+                    
+        return False # Default to assuming it's new if the data structure is empty
+    except Exception as e:
+        print(f"Podio API Pre-check failed for {company_name}: {e}")
+        # If the API fails for some reason, return True to fall back to the safe Playwright check
+        return True
 def process(field, location, sources, num_per_source, progress_cb=None, api_key=None, podio_email=None, podio_password=None):
     """
     1) Scrapes the selected sources for companies.
