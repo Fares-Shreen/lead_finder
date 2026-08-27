@@ -1,21 +1,24 @@
 """
 Given raw HTML (from a company's own website), pull out the useful bits:
-emails, phone numbers, and a LinkedIn profile link if one is present.
+emails, Egyptian phone numbers, and a LinkedIn profile link if one is present.
 """
 import re
 from urllib.parse import urljoin
-
 import requests
 from bs4 import BeautifulSoup
 
 from config import REQUEST_HEADERS, REQUEST_TIMEOUT
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
-# Egyptian-friendly phone matcher: local numbers, +20 country code, spaced/dashed formats
+
+# STRICT EGYPTIAN PHONE MATCHER
+# Matches: 
+# - Mobiles: +20 10/11/12/15, 0020 1x, or 01x
+# - Landlines (Cairo/Alex/etc): +20 2/3, 02/03, 04x-09x
 PHONE_RE = re.compile(
-    r"(?:\+?20[\s\-]?1[0125][\s\-]?\d{3}[\s\-]?\d{4}"   # +20 1x xxx xxxx (mobile)
-    r"|\+?\d{1,3}[\s\-]?\(?\d{2,4}\)?[\s\-]?\d{3,4}[\s\-]?\d{3,4})"
+    r"(?:\+20|0020)?[\s\-]?\(?0?\)?(?:1[0125][\s\-]?\d{3}[\s\-]?\d{4}|(?:2|3|[4-9]\d)[\s\-]?\d{3,4}[\s\-]?\d{3,4})"
 )
+
 LINKEDIN_RE = re.compile(r"https?://[\w.]*linkedin\.com/[^\s\"'<>]+", re.I)
 
 CONTACT_PATH_HINTS = ["contact", "contact-us", "contactus", "about", "about-us", "get-in-touch"]
@@ -42,6 +45,7 @@ def _clean_phones(raw_phones):
     seen, out = set(), []
     for p in raw_phones:
         digits = re.sub(r"\D", "", p)
+        # Ensure it has at least 8 digits (standard Egyptian length)
         if len(digits) < 8:
             continue
         if digits not in seen:
@@ -72,12 +76,14 @@ def enrich_from_website(website_url):
     """
     Visit a company's homepage (and its contact page, if findable) and
     return {"emails": [...], "phones": [...], "linkedin": "..." or None}.
-    Best-effort: sites with heavy JS rendering or bot protection may return
-    little or nothing, in which case the fields come back empty.
     """
     result = {"emails": [], "phones": [], "linkedin": None}
     if not website_url:
         return result
+
+    # Fix missing http/https
+    if not website_url.startswith("http"):
+        website_url = "http://" + website_url
 
     html = _fetch(website_url)
     pages_html = [html] if html else []
