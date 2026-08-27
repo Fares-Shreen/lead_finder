@@ -6,7 +6,7 @@ import re
 from urllib.parse import urljoin
 import requests
 from bs4 import BeautifulSoup
-
+import dns.resolver
 from config import REQUEST_HEADERS, REQUEST_TIMEOUT
 
 EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
@@ -26,18 +26,27 @@ CONTACT_PATH_HINTS = ["contact", "contact-us", "contactus", "about", "about-us",
 SKIP_EMAIL_DOMAINS = {"example.com", "sentry.io", "wixpress.com", "godaddy.com"}
 
 
+def _is_valid_email_domain(email):
+    domain = email.split("@")[-1]
+    try:
+        # Check if the domain has a mail server configured
+        dns.resolver.resolve(domain, 'MX')
+        return True
+    except (dns.resolver.NoAnswer, dns.resolver.NXDOMAIN, dns.exception.Timeout):
+        return False
+
 def _clean_emails(raw_emails):
     seen, out = set(), []
     for e in raw_emails:
         e = e.strip().strip(".,;:")
         domain = e.split("@")[-1].lower()
-        if domain in SKIP_EMAIL_DOMAINS:
-            continue
-        if e.lower().endswith((".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp")):
+        if domain in SKIP_EMAIL_DOMAINS or e.lower().endswith((".png", ".jpg", ".gif")):
             continue
         if e.lower() not in seen:
             seen.add(e.lower())
-            out.append(e)
+            # ONLY add the email if the domain can actually receive mail!
+            if _is_valid_email_domain(e):
+                out.append(e)
     return out
 
 

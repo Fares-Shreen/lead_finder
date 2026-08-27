@@ -11,6 +11,7 @@ from podio_live_checker import analyze_leads_live
 import dedupe
 import extractor
 from urllib.parse import urlparse
+import concurrent.futures
 
 # Mappings for dynamic scraper calling
 SOURCE_FUNCS = {
@@ -55,24 +56,30 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
 
     raw_candidates = []
 
-    # 1) Collect from Sources
-    for source_name in sources:
-        if source_name not in SOURCE_FUNCS: continue
-        
+# 1) Collect from Sources (Simultaneously)
+    if progress_cb: progress_cb("📥 Launching scrapers simultaneously...")
+    
+    def fetch_source(source_name):
         offset = dedupe.get_search_offset(source_name, field, location)
-        if progress_cb: progress_cb(f"📥 Searching {source_name}... (Starting from offset {offset})")
-        
         try:
             results = SOURCE_FUNCS[source_name](field, location, num_per_source, offset, api_key)
-            for r in results:
-                r["field"] = field
-                r["location"] = location
-                raw_candidates.append(r)
-                
             dedupe.advance_search_offset(source_name, field, location, OFFSET_STEP.get(source_name, 10))
-            if progress_cb: progress_cb(f"✅ {source_name} returned {len(results)} records.")
+            return source_name, results, None
         except Exception as e:
-            if progress_cb: progress_cb(f"❌ Error in {source_name}: {e}")
+            return source_name, [], str(e)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as executor:
+        futures = [executor.submit(fetch_source, s) for s in sources]
+        for future in concurrent.futures.as_completed(futures):
+            source_name, results, error = future.result()
+            if error:
+                if progress_cb: progress_cb(f"❌ Error in {source_name}: {error}")
+            else:
+                for r in results:
+                    r["field"] = field
+                    r["location"] = location
+                    raw_candidates.append(r)
+                if progress_cb: progress_cb(f"✅ {source_name} returned {len(results)} records.")
 
     # 2) Initial Deduplication (Local DB + Session domains)
     if progress_cb: progress_cb(f"🧹 Found {len(raw_candidates)} total raw records. Deduplicating...")

@@ -3,6 +3,7 @@ import sys
 import time
 import asyncio
 import datetime
+import requests
 import pandas as pd
 import streamlit as st
 
@@ -56,6 +57,30 @@ with col_podio:
 
 st.divider()
 
+# --- PREDICTIVE LEAD SCORING HELPER ---
+def apply_lead_scoring(df):
+    """Assigns a score of Hot, Warm, or Cold based on available contact info richness."""
+    if df.empty: return df
+    df_copy = df.copy()
+    
+    scores = []
+    for _, row in df_copy.iterrows():
+        score = 0
+        if row.get("phones"): score += 40
+        if row.get("emails"): score += 30
+        if row.get("linkedin"): score += 20
+        if row.get("website"): score += 10
+        
+        if score >= 70: scores.append("🔥 Hot")
+        elif score >= 40: scores.append("☀️ Warm")
+        else: scores.append("❄️ Cold")
+        
+    if "Lead Score" not in df_copy.columns:
+        df_copy.insert(0, "Lead Score", scores)
+    else:
+        df_copy["Lead Score"] = scores
+    return df_copy
+
 # --- CONFIRMATION DIALOG MODAL ---
 @st.dialog("⚠️ Confirm Status Change")
 def confirm_status_dialog(target_type, company_name, current_val, row_idx=None, sheet_tab=None):
@@ -83,7 +108,7 @@ def confirm_status_dialog(target_type, company_name, current_val, row_idx=None, 
             if st.button("❌ Cancel", use_container_width=True):
                 st.rerun()
 
-def _execute_status_change(target_type, company_name, new_val, row_idx, sheet_tab):
+def _execute_status_change(target_type, company_name, new_val, row_idx=None, sheet_tab=None):
     if target_type == "local":
         dedupe.update_company_status(company_name, new_val)
     elif target_type == "sheet":
@@ -99,6 +124,32 @@ def _execute_status_change(target_type, company_name, new_val, row_idx, sheet_ta
         
         ws.clear()
         ws.update([df.columns.values.tolist()] + df.values.tolist())
+
+    # --- AUTOMATED WEBHOOK (CRM PUSH) ---
+    if new_val == True: 
+        try:
+            with dedupe._conn() as c:
+                row = c.execute("SELECT * FROM companies WHERE name_normalized = ?", (dedupe._normalize(company_name),)).fetchone()
+                
+            if row:
+                webhook_payload = {
+                    "company_name": row[1],
+                    "field": row[2],
+                    "location": row[3],
+                    "website": row[4],
+                    "linkedin": row[5],
+                    "emails": row[6],
+                    "phones": row[7]
+                }
+                
+                # Replace this URL with your actual Zapier / Make.com webhook URL
+                webhook_url = "https://hooks.zapier.com/hooks/catch/your_id_here/"
+                try:
+                    requests.post(webhook_url, json=webhook_payload, timeout=2)
+                except requests.exceptions.RequestException:
+                    pass # Ignore timeouts if the dummy URL is still in place
+        except Exception as e:
+            print(f"Webhook failed: {e}")
 
 # --- 15-DAY RESET HELPER ---
 def apply_15_day_reset(df):
@@ -197,7 +248,7 @@ with tab_search:
             st.success(f"Pipeline Complete! {len(all_new_records)} brand new leads generated. Synced to Google Sheets.")
 
 # =========================================================================
-# TAB 2: TEAM ACTION HUB (15-DAY RESET & SELECTION POP-UP)
+# TAB 2: TEAM ACTION HUB
 # =========================================================================
 with tab_action_hub:
     st.markdown("### Team Action Hub (Google Sheets)")
@@ -238,12 +289,16 @@ with tab_action_hub:
                         if st.button(btn_label, key=f"btn_pop_{ws_name}"):
                             confirm_status_dialog("sheet", selected_target, current_state, target_row_idx, ws_name)
 
+                    # Apply predictive scoring for display only
+                    df_display = apply_lead_scoring(df)
+
                     st.dataframe(
-                        df.style.apply(highlight_green, axis=1),
+                        df_display.style.apply(highlight_green, axis=1),
                         column_config={
                             "Deal Link": st.column_config.LinkColumn(),
                             "Company Link": st.column_config.LinkColumn(),
-                            "Checked_Date": st.column_config.TextColumn("Date Used")
+                            "Checked_Date": st.column_config.TextColumn("Date Used"),
+                            "Lead Score": st.column_config.TextColumn("Score")
                         },
                         use_container_width=True
                     )
@@ -260,7 +315,7 @@ with tab_action_hub:
         st.warning("⚠️ Google Sheets credentials are not configured in Streamlit Secrets.")
 
 # =========================================================================
-# TAB 3: LOCAL DATABASE (PENDING COMPANIES FOR NORMAL USERS)
+# TAB 3: LOCAL DATABASE
 # =========================================================================
 with tab_database:
     dedupe.init_db()
@@ -291,7 +346,10 @@ with tab_database:
                 if st.button(btn_txt, key="btn_local_db_confirm"):
                     confirm_status_dialog("local", chosen_comp, is_checked)
 
-        display_cols = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
+        # Apply lead scoring for display
+        df_local = apply_lead_scoring(df_local)
+
+        display_cols = ["Lead Score", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
         clean_display_cols = [c for c in display_cols if c in df_local.columns]
         
         st.dataframe(
@@ -300,7 +358,8 @@ with tab_database:
                 "website": st.column_config.LinkColumn(),
                 "source_url": st.column_config.LinkColumn(),
                 "linkedin": st.column_config.LinkColumn(),
-                "checked_date": st.column_config.TextColumn("Date Checked")
+                "checked_date": st.column_config.TextColumn("Date Checked"),
+                "Lead Score": st.column_config.TextColumn("Score")
             },
             use_container_width=True
         )
@@ -308,7 +367,7 @@ with tab_database:
         st.info("No available companies to display.")
 
 # =========================================================================
-# TAB 4: ADMIN CONTROLS (DASHBOARD BY DAY/WEEK/OVERALL + CHECKED LEADS)
+# TAB 4: ADMIN CONTROLS
 # =========================================================================
 with tab_admin:
     st.markdown("### 🔐 Admin Panel")
@@ -319,13 +378,12 @@ with tab_admin:
         st.success("Admin mode unlocked.")
         
         tab_checked, tab_dash, tab_del, tab_danger = st.tabs([
-            "🟢 Checked Companies (Local DB)", 
-            "📊 Dashboard (Day / Week / Overall)", 
+            "🟢 Checked Companies", 
+            "📊 Dashboard", 
             "🗑️ Delete from Local DB", 
             "⚠️ Danger Zone"
         ])
 
-        # --- ADMIN TAB 1: CHECKED COMPANIES VIEWER ---
         with tab_checked:
             st.subheader("🟢 Checked / Used Companies in Local Database")
             st.caption("These companies are currently hidden from normal users.")
@@ -347,7 +405,8 @@ with tab_admin:
                         time.sleep(0.5)
                         st.rerun()
 
-                cols_to_show = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "checked_date", "found_at"]
+                df_checked = apply_lead_scoring(df_checked)
+                cols_to_show = ["Lead Score", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "checked_date", "found_at"]
                 clean_cols = [c for c in cols_to_show if c in df_checked.columns]
                 
                 st.dataframe(
@@ -356,19 +415,17 @@ with tab_admin:
                         "website": st.column_config.LinkColumn(),
                         "source_url": st.column_config.LinkColumn(),
                         "linkedin": st.column_config.LinkColumn(),
-                        "checked_date": st.column_config.TextColumn("Date Used")
+                        "checked_date": st.column_config.TextColumn("Date Used"),
+                        "Lead Score": st.column_config.TextColumn("Score")
                     },
                     use_container_width=True
                 )
             else:
                 st.info("No companies are currently marked as Checked / Used in the Local Database.")
 
-        # --- ADMIN TAB 2: METRICS DASHBOARD (DAY / WEEK / OVERALL) ---
         with tab_dash:
             stats = dedupe.get_stats()
-            
             st.subheader("📊 Performance & Activity Dashboard")
-            
             dash_view = st.radio("Select Timeframe:", ["📅 Today (Per Day)", "🗓️ Last 7 Days (Per Week)", "🌐 Overall (All-Time)"], horizontal=True)
             
             if dash_view == "📅 Today (Per Day)":
@@ -397,9 +454,8 @@ with tab_admin:
             else:
                 st.info("No search activity recorded yet.")
 
-        # --- ADMIN TAB 3: DELETE ---
         with tab_del:
-            st.caption("Delete records from the master Local Database only (leaves Excel 1 & 2 untouched).")
+            st.caption("Delete records from the master Local Database only.")
             names = [c["name"] for c in dedupe.all_companies(include_confirmed=True)]
             if names:
                 to_delete = st.selectbox("Select company to remove permanently:", names, key="admin_delete_select")
@@ -409,7 +465,6 @@ with tab_admin:
                     time.sleep(0.5)
                     st.rerun()
 
-        # --- ADMIN TAB 4: DANGER ZONE ---
         with tab_danger:
             st.error("Wiping the database will clear all saved companies and reset search progress.")
             if st.button("🧨 Wipe Local Database", type="primary"):

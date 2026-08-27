@@ -4,7 +4,16 @@ def search_wuzzuf(field, location, num_results, start=0, api_key=None):
     if not api_key: return []
     
     query = f'site:wuzzuf.net/jobs/p "{field}" "{location}"'
-    params = {"engine": "google", "q": query, "api_key": api_key, "num": num_results, "start": start}
+    
+    # qdr:m24 means "Query Date Range: Months 24" (Maximum 2 years old)
+    params = {
+        "engine": "google", 
+        "q": query, 
+        "api_key": api_key, 
+        "num": num_results, 
+        "start": start,
+        "tbs": "qdr:m24" 
+    }
     
     try:
         res = requests.get("https://serpapi.com/search", params=params)
