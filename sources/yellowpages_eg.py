@@ -3,7 +3,11 @@ import requests
 def search_yellowpages(field, location, num_results, start=0, api_key=None):
     if not api_key: return []
     
-    query = f'site:yellowpages.com.eg "{field}" "{location}"'
+    # Extract just the city name (e.g., "Alexandria" from "Alexandria, Egypt")
+    city = location.split(",")[0].strip()
+    
+    # Restricting to '/en/profile' forces Google to ONLY return individual company pages!
+    query = f'site:yellowpages.com.eg/en/profile "{field}" "{city}"'
     
     params = {
         "engine": "google", 
@@ -20,25 +24,21 @@ def search_yellowpages(field, location, num_results, start=0, api_key=None):
         
         for item in data.get("organic_results", []):
             title = item.get("title", "")
-            link = item.get("link", "").lower()
+            link = item.get("link", "")
             
-            # 1. Skip directory and category pages immediately
-            if "/category/" in link or "/map-category/" in link:
-                continue
-                
-            # Yellow Pages Google titles usually look like: "Company Name - Category - Location"
-            company = title.split(" - ")[0].strip()
+            # Profile page titles format: "Company Name - Category - Location | Yellowpages..."
+            company = title.split(" - ")[0].split(" | ")[0].strip()
+            
+            invalid_keywords = ["yellowpages", "profile", "category"]
             comp_lower = company.lower()
             
-            # 2. Block aggregate titles like "Best 50 Companies..."
-            invalid_keywords = ["yellowpages", "top", "best", "companies", "ministries", "organizations"]
-            if company and len(company) < 50 and not any(k in comp_lower for k in invalid_keywords):
+            if company and len(company) < 60 and not any(k in comp_lower for k in invalid_keywords):
                 results.append({
                     "name": company,
                     "website": "",
                     "linkedin": "",
                     "source": "Yellow Pages",
-                    "source_url": item.get("link", "")
+                    "source_url": link
                 })
                 
         return results
