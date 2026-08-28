@@ -3,7 +3,6 @@ import requests
 def search_yellowpages(field, location, num_results, start=0, api_key=None):
     if not api_key: return []
     
-    # Use an f-string to safely inject variables (prevents the string/int concatenation error)
     query = f'site:yellowpages.com.eg "{field}" "{location}"'
     
     params = {
@@ -11,7 +10,7 @@ def search_yellowpages(field, location, num_results, start=0, api_key=None):
         "q": query, 
         "api_key": api_key, 
         "num": num_results, 
-        "start": start  # Requests library automatically handles integer conversion here
+        "start": start 
     }
     
     try:
@@ -21,12 +20,19 @@ def search_yellowpages(field, location, num_results, start=0, api_key=None):
         
         for item in data.get("organic_results", []):
             title = item.get("title", "")
+            link = item.get("link", "").lower()
             
+            # 1. Skip directory and category pages immediately
+            if "/category/" in link or "/map-category/" in link:
+                continue
+                
             # Yellow Pages Google titles usually look like: "Company Name - Category - Location"
             company = title.split(" - ")[0].strip()
+            comp_lower = company.lower()
             
-            # Filter out generic directory pages (e.g., "Top 10 Software Companies")
-            if company and len(company) < 50 and "Yellowpages" not in company and "Top" not in company:
+            # 2. Block aggregate titles like "Best 50 Companies..."
+            invalid_keywords = ["yellowpages", "top", "best", "companies", "ministries", "organizations"]
+            if company and len(company) < 50 and not any(k in comp_lower for k in invalid_keywords):
                 results.append({
                     "name": company,
                     "website": "",

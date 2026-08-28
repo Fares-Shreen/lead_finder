@@ -218,7 +218,7 @@ with tab_search:
             ["Google Maps", "LinkedIn", "Yellow Pages", "Wuzzuf", "Indeed"],
             default=["Google Maps", "LinkedIn", "Wuzzuf", "Indeed"]
         )
-        num_per_source = st.slider("Results per source (per field)", 5, 50, 15)
+        num_per_source = st.slider("Results per source (per field)", 10, 100, 25)
         restart = st.checkbox("Start this field + location over from the beginning", value=False)
         submitted = st.form_submit_button("🚀 Run Pipeline")
 

@@ -1,17 +1,17 @@
 import requests
 
 def search_linkedin_companies(field, location, num_results, start=0, api_key=None):
-    if not api_key: 
-        return []
+    if not api_key: return []
     
-    # We use Google Search restricted to LinkedIn company pages to bypass LinkedIn's bot blockers
-    query = f'site:linkedin.com/company/ "{field}" "{location}"'
+    # Enforce the "eg." subdomain to strictly pull Egyptian companies
+    query = f'site:eg.linkedin.com/company "{field}" "{location}"'
+    
     params = {
-        "engine": "google",
-        "q": query,
-        "api_key": api_key,
-        "num": num_results,
-        "start": start
+        "engine": "google", 
+        "q": query, 
+        "api_key": api_key, 
+        "num": num_results, 
+        "start": start 
     }
     
     try:
@@ -23,17 +23,18 @@ def search_linkedin_companies(field, location, num_results, start=0, api_key=Non
             title = item.get("title", "")
             link = item.get("link", "")
             
-            # Clean up the title to extract just the company name
-            # Google formats LinkedIn titles like: "Company Name - LinkedIn" or "Company Name | LinkedIn"
-            company_name = title.split(" - ")[0].split(" | ")[0].replace("LinkedIn", "").strip()
+            # Secondary safeguard: skip any URL that is not an Egyptian or generic LinkedIn company page
+            if not ("eg.linkedin.com" in link or "www.linkedin.com" in link):
+                continue
+                
+            # Clean up the company name
+            company = title.split(" | ")[0].split(" - ")[0].strip()
             
-            if company_name and "linkedin.com/company/" in link:
+            if company and "LinkedIn" not in company:
                 results.append({
-                    "name": company_name,
+                    "name": company,
                     "website": "",
                     "linkedin": link,
-                    "emails": [],
-                    "phones": [],
                     "source": "LinkedIn",
                     "source_url": link
                 })
