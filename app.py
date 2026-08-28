@@ -218,7 +218,7 @@ with tab_search:
         ["Google Maps", "LinkedIn", "Yellow Pages", "Wuzzuf", "Indeed"],
         default=["Google Maps", "LinkedIn", "Wuzzuf", "Indeed"]
     )
-    num_per_source = st.slider("Results per source (per field)", 10, 100, 25)
+    num_per_source = st.slider("Results per source (per field)", 10, 100, 100, step=10)
     restart = st.checkbox("Start this field + location over from the beginning", value=False)
 
     # --- DUAL ACTION BUTTONS (Run Once vs Auto-Run) ---
@@ -305,7 +305,7 @@ with tab_manual:
         df_sus = pd.DataFrame(suspects)
         st.dataframe(df_sus, use_container_width=True)
         
-        batch_size = st.slider("Select batch size to process:", 5, 50, 25)
+        batch_size = st.slider("Select batch size to process:", 10, 200, 100, step=10)
         
         check_status = st.empty()
         log_lines_p = []
