@@ -40,9 +40,20 @@ def _sync_to_google_sheet(new_list, sheet_tab_name):
             if existing_data:
                 df_old = pd.DataFrame(existing_data)
                 df_combined = pd.concat([df_old, df_new], ignore_index=True)
-                df_combined.drop_duplicates(subset=["Company Name"], keep="first", inplace=True)
+                
+                # FIX 1: Handle both 'Company Name' (Excel 1 & 2) and 'name' (Need_podio_check)
+                dup_col = "Company Name" if "Company Name" in df_combined.columns else "name"
+                if dup_col in df_combined.columns:
+                    df_combined.drop_duplicates(subset=[dup_col], keep="first", inplace=True)
             else:
                 df_combined = df_new
+
+            # FIX 2: Convert lists to comma-separated strings for Google Sheets compatibility
+            for col in df_combined.columns:
+                df_combined[col] = df_combined[col].apply(lambda x: ", ".join(x) if isinstance(x, list) else x)
+
+            # Fill missing data with empty strings to avoid JSON serialization errors
+            df_combined = df_combined.fillna("")
 
             worksheet.clear()
             worksheet.update([df_combined.columns.values.tolist()] + df_combined.values.tolist())
@@ -216,12 +227,10 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
 
             except Exception as e:
                 if progress_cb: progress_cb(f" ❌ Error checking {name}: {e}")
-                # If an error happens, err on the side of caution and don't clear it yet.
                 pass 
 
         browser.close()
 
-    # Sync the caught leads to Excel sheets immediately
     _sync_to_google_sheet(excel_1_deal_accounts, "Excel_1_Deals")
     _sync_to_google_sheet(excel_2_companies_to_take, "Excel_2_Companies")
 
