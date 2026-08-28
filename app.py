@@ -36,6 +36,8 @@ if "serpapi_key" not in st.session_state: st.session_state.serpapi_key = config.
 if "podio_email" not in st.session_state: st.session_state.podio_email = os.environ.get("PODIO_EMAIL", "")
 if "podio_password" not in st.session_state: st.session_state.podio_password = os.environ.get("PODIO_PASSWORD", "")
 if "is_admin" not in st.session_state: st.session_state.is_admin = False
+if "auto_run_active" not in st.session_state: st.session_state.auto_run_active = False
+if "auto_run_cycle" not in st.session_state: st.session_state.auto_run_cycle = 0
 
 col_api, col_podio = st.columns(2)
 with col_api:
@@ -142,12 +144,11 @@ def _execute_status_change(target_type, company_name, new_val, row_idx=None, she
                     "phones": row[7]
                 }
                 
-                # Replace this URL with your actual Zapier / Make.com webhook URL
                 webhook_url = "https://hooks.zapier.com/hooks/catch/your_id_here/"
                 try:
                     requests.post(webhook_url, json=webhook_payload, timeout=2)
                 except requests.exceptions.RequestException:
-                    pass # Ignore timeouts if the dummy URL is still in place
+                    pass
         except Exception as e:
             print(f"Webhook failed: {e}")
 
@@ -211,16 +212,31 @@ with tab_search:
         fields_to_search.extend([x.strip() for x in custom_fields_input.split(",") if x.strip()])
     fields_to_search = list(set(fields_to_search))
 
-    with st.form("search_form"):
-        location = st.text_input("Location", value="Alexandria, Egypt")
-        sources = st.multiselect(
-            "Search on",
-            ["Google Maps", "LinkedIn", "Yellow Pages", "Wuzzuf", "Indeed"],
-            default=["Google Maps", "LinkedIn", "Wuzzuf", "Indeed"]
-        )
-        num_per_source = st.slider("Results per source (per field)", 10, 100, 25)
-        restart = st.checkbox("Start this field + location over from the beginning", value=False)
-        submitted = st.form_submit_button("🚀 Run Pipeline")
+    location = st.text_input("Location", value="Alexandria, Egypt")
+    sources = st.multiselect(
+        "Search on",
+        ["Google Maps", "LinkedIn", "Yellow Pages", "Wuzzuf", "Indeed"],
+        default=["Google Maps", "LinkedIn", "Wuzzuf", "Indeed"]
+    )
+    num_per_source = st.slider("Results per source (per field)", 10, 100, 25)
+    restart = st.checkbox("Start this field + location over from the beginning", value=False)
+
+    # --- DUAL ACTION BUTTONS (Run Once vs Auto-Run) ---
+    col_btn_once, col_btn_auto = st.columns(2)
+    
+    with col_btn_once:
+        run_once_clicked = st.button("🚀 Run Once", use_container_width=True, disabled=st.session_state.auto_run_active)
+        
+    with col_btn_auto:
+        if not st.session_state.auto_run_active:
+            if st.button("🔄 Start Auto-Run Pipeline", type="primary", use_container_width=True):
+                st.session_state.auto_run_active = True
+                st.session_state.auto_run_cycle = 0
+                st.rerun()
+        else:
+            if st.button("🛑 Stop Auto-Run Pipeline", type="secondary", use_container_width=True):
+                st.session_state.auto_run_active = False
+                st.rerun()
 
     status_box = st.empty()
     log_lines = []
@@ -228,17 +244,26 @@ with tab_search:
         log_lines.append(msg)
         status_box.code("\n".join(log_lines[-15:]))
 
-    if submitted:
+    # EXECUTE PIPELINE LOGIC (Runs on 'Run Once' or during 'Auto-Run' active loop)
+    should_run = run_once_clicked or st.session_state.auto_run_active
+
+    if should_run:
         if not fields_to_search or not sources:
             st.warning("⚠️ Please select fields and sources.")
+            st.session_state.auto_run_active = False
         elif not st.session_state.podio_email or not st.session_state.podio_password:
             st.error("⚠️ Podio credentials are required.")
+            st.session_state.auto_run_active = False
         else:
-            if restart:
+            if restart and not st.session_state.auto_run_active:
                 dedupe.init_db()
                 for s in sources:
                     for f in fields_to_search:
                         dedupe.reset_search_offset(s, f, location)
+
+            st.session_state.auto_run_cycle += 1
+            if st.session_state.auto_run_active:
+                st.info(f"🔄 **Auto-Run Active — Cycle #{st.session_state.auto_run_cycle}** (Offsets automatically advancing)")
 
             total_clean, total_suspects = 0, 0
             for current_field in fields_to_search:
@@ -252,7 +277,17 @@ with tab_search:
                     total_clean += len(clean_leads)
                     total_suspects += len(suspect_leads)
             
-            st.success(f"Pipeline Complete! ✅ {total_clean} new leads saved directly to DB. 🕵️ {total_suspects} suspects routed to Manual Check.")
+            st.success(f"Cycle Complete! ✅ {total_clean} new leads saved to DB. 🕵️ {total_suspects} suspects routed to Manual Check.")
+
+            # If Auto-Run is enabled, handle continuation or smart stopping
+            if st.session_state.auto_run_active:
+                if total_clean == 0 and total_suspects == 0:
+                    st.warning("🏁 No more new results found across all sources. Auto-run stopped.")
+                    st.session_state.auto_run_active = False
+                else:
+                    st.toast(f"Cycle #{st.session_state.auto_run_cycle} complete. Next round starting in 3 seconds...", icon="⏳")
+                    time.sleep(3)
+                    st.rerun()
 
 # =========================================================================
 # TAB 2: MANUAL DEEP CHECK (PLAYWRIGHT)
@@ -395,7 +430,6 @@ with tab_action_hub:
                         if st.button(btn_label, key=f"btn_pop_{ws_name}"):
                             confirm_status_dialog("sheet", selected_target, current_state, target_row_idx, ws_name)
 
-                    # Apply predictive scoring for display only
                     df_display = apply_lead_scoring(df)
 
                     st.dataframe(
@@ -452,7 +486,6 @@ with tab_database:
                 if st.button(btn_txt, key="btn_local_db_confirm"):
                     confirm_status_dialog("local", chosen_comp, is_checked)
 
-        # Apply lead scoring for display
         df_local = apply_lead_scoring(df_local)
 
         display_cols = ["Lead Score", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
