@@ -1,4 +1,3 @@
-import os
 import time
 from datetime import datetime
 import pandas as pd
@@ -8,17 +7,10 @@ from playwright.sync_api import sync_playwright
 import streamlit as st
 
 def _get_gspread_client():
-    """Initializes Google Sheets client by completely bypassing TOML parsing."""
     try:
         import json
-        import gspread
-        from google.oauth2.service_account import Credentials
-        
         scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        
-        # Load the raw JSON string directly
         creds_dict = json.loads(st.secrets["gcp_raw_json"])
-        
         creds = Credentials.from_service_account_info(creds_dict, scopes=scope)
         return gspread.authorize(creds)
     except Exception as e:
@@ -26,13 +18,9 @@ def _get_gspread_client():
         return None
 
 def _sync_to_google_sheet(new_list, sheet_tab_name):
-    """Pulls data from Google Sheet, merges new data, removes duplicates, and updates."""
     client = _get_gspread_client()
-    
-    # Fail gracefully if secrets aren't set up yet
     if not client or "sheet" not in st.secrets:
         return None
-
     sheet_name = st.secrets["sheet"]["name"]
 
     try:
@@ -106,14 +94,14 @@ def _extract_podio_data(page):
 def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
     excel_1_deal_accounts = []
     excel_2_companies_to_take = []
-    new_leads_to_enrich = []
+    cleared_new_leads = []
 
     if not candidate_leads:
-        return [], [], [], None, None
+        return [], [], []
 
     if not email or not password:
         if progress_cb: progress_cb("⚠️ Missing Podio credentials. Skipping Podio check.")
-        return [], [], candidate_leads, None, None
+        return [], [], candidate_leads
 
     with sync_playwright() as p:
         browser = p.chromium.launch(
@@ -135,13 +123,14 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
             time.sleep(2)
         except Exception:
             if progress_cb: progress_cb("❌ Podio Login failed. Check credentials.")
-            return [], [], candidate_leads, None, None
+            return [], [], candidate_leads
 
         for lead in candidate_leads:
             name = lead["name"]
-            if progress_cb: progress_cb(f"🔎 Checking Podio for: {name}")
+            if progress_cb: progress_cb(f"🔎 Deep checking: {name}")
 
             try:
+                # --- CHECK DEALS FIRST ---
                 try:
                     page.goto("https://podio.com/aiesecglobal/ams-for-aiesec-in-egypt/apps/deals", wait_until="domcontentloaded")
                 except:
@@ -162,16 +151,15 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
                     time.sleep(4)
 
                     committee, stage, timestamps = _extract_podio_data(page)
+                    # DEALS CONDITION: Last Activity (Index -1)
                     last_activity = timestamps[-1] if timestamps else None
                     days_ago = _parse_days_ago(last_activity)
 
-                    if progress_cb: progress_cb(f"  🟡 Found in Deals! (Stage: {stage}, LC: {committee}, Inactive: {days_ago} days)")
-
-                    is_alex = "alexandria" in committee.lower()
                     is_active_stage = "raised" in stage.lower() or "signed" in stage.lower()
 
                     if not is_active_stage:
-                        if is_alex or days_ago > 15:
+                        if days_ago > 15:
+                            if progress_cb: progress_cb(f" 🟡 Sent to Excel 1 (Deals) - Inactive for {days_ago} days.")
                             excel_1_deal_accounts.append({
                                 "Company Name": name,
                                 "Deal Link": page.url,
@@ -184,6 +172,7 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
                             })
                     continue
 
+                # --- CHECK COMPANIES SECOND ---
                 try:
                     page.goto("https://podio.com/aiesecglobal/ams-for-aiesec-in-egypt/apps/companies", wait_until="domcontentloaded")
                 except:
@@ -204,12 +193,12 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
                     time.sleep(4)
 
                     committee, stage, timestamps = _extract_podio_data(page)
+                    # COMPANIES CONDITION: First Activity (Index 0)
                     first_activity = timestamps[0] if timestamps else None
                     days_ago = _parse_days_ago(first_activity)
 
-                    if progress_cb: progress_cb(f"  🟢 Found in Companies! (LC: {committee}, Inactive: {days_ago} days)")
-
                     if days_ago > 15:
+                        if progress_cb: progress_cb(f" 🟢 Sent to Excel 2 (Companies) - Inactive for {days_ago} days.")
                         excel_2_companies_to_take.append({
                             "Company Name": name,
                             "Company Link": page.url,
@@ -221,17 +210,19 @@ def analyze_leads_live(candidate_leads, email, password, progress_cb=None):
                         })
                     continue
 
-                if progress_cb: progress_cb(f"  ✨ Genuine New Lead!")
-                new_leads_to_enrich.append(lead)
+                # --- IF IT PASSES BOTH, IT IS A GENUINE NEW LEAD ---
+                if progress_cb: progress_cb(f" ✨ Safe! Genuine New Lead.")
+                cleared_new_leads.append(lead)
 
             except Exception as e:
-                if progress_cb: progress_cb(f"  ❌ Error checking {name}: {e}")
-                new_leads_to_enrich.append(lead)
+                if progress_cb: progress_cb(f" ❌ Error checking {name}: {e}")
+                # If an error happens, err on the side of caution and don't clear it yet.
+                pass 
 
         browser.close()
 
-    # PUSH TO GOOGLE SHEETS!
+    # Sync the caught leads to Excel sheets immediately
     _sync_to_google_sheet(excel_1_deal_accounts, "Excel_1_Deals")
     _sync_to_google_sheet(excel_2_companies_to_take, "Excel_2_Companies")
 
-    return excel_1_deal_accounts, excel_2_companies_to_take, new_leads_to_enrich, "Google Sheets (Excel 1)", "Google Sheets (Excel 2)"
+    return excel_1_deal_accounts, excel_2_companies_to_take, cleared_new_leads

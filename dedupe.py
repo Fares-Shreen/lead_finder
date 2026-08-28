@@ -9,6 +9,8 @@ import streamlit as st
 from contextlib import contextmanager
 from datetime import datetime
 from config import DB_PATH
+import pandas as pd
+import podio_live_checker
 
 _CLOUD_SYNC_DONE = False
 
@@ -301,3 +303,42 @@ def clear_all_data():
         c.execute("DELETE FROM companies;")
         c.execute("DELETE FROM sqlite_sequence;")
     sync_to_google_sheets()
+
+def add_suspects_to_sheet(suspect_list):
+    """Saves API-flagged suspect companies to the Need_podio_check tab."""
+    podio_live_checker._sync_to_google_sheet(suspect_list, "Need_podio_check")
+
+def get_suspects_from_sheet():
+    """Retrieves pending suspects for manual Playwright checking."""
+    client = podio_live_checker._get_gspread_client()
+    if not client or "sheet" not in st.secrets: return []
+    try:
+        sh = client.open(st.secrets["sheet"]["name"])
+        worksheet = sh.worksheet("Need_podio_check")
+        return worksheet.get_all_records()
+    except Exception:
+        return []
+
+def is_suspect(company_name):
+    """Prevents re-scraping companies already in the suspect queue."""
+    suspects = get_suspects_from_sheet()
+    name_normalized = _normalize(company_name)
+    for s in suspects:
+        if _normalize(s.get("name", "")) == name_normalized:
+            return True
+    return False
+
+def remove_suspects_from_sheet(names_to_remove):
+    """Removes processed leads from the queue."""
+    client = podio_live_checker._get_gspread_client()
+    if not client: return
+    try:
+        sh = client.open(st.secrets["sheet"]["name"])
+        worksheet = sh.worksheet("Need_podio_check")
+        df = pd.DataFrame(worksheet.get_all_records())
+        if not df.empty:
+            df = df[~df["name"].isin(names_to_remove)]
+            worksheet.clear()
+            worksheet.update([df.columns.values.tolist()] + df.values.tolist())
+    except Exception as e:
+        print(f"Error removing suspects: {e}")    
