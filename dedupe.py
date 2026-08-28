@@ -322,10 +322,18 @@ def get_suspects_from_sheet():
 def is_suspect(company_name):
     """Prevents re-scraping companies already in the suspect queue."""
     suspects = get_suspects_from_sheet()
-    name_normalized = _normalize(company_name)
+    
+    # Safely convert the incoming search name to a string
+    name_normalized = _normalize(str(company_name or ""))
+    
     for s in suspects:
-        if _normalize(s.get("name", "")) == name_normalized:
+        # Force the Google Sheets value to be a string before normalizing.
+        # This prevents crashes if the sheet has empty rows or numeric names.
+        raw_name = str(s.get("name", "") or "")
+        
+        if _normalize(raw_name) == name_normalized:
             return True
+            
     return False
 
 def remove_suspects_from_sheet(names_to_remove):
