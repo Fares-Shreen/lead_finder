@@ -1,3 +1,4 @@
+import base64
 import os
 import sys
 import time
@@ -6,6 +7,7 @@ import datetime
 import requests
 import pandas as pd
 import streamlit as st
+from streamlit import components
 
 os.system("playwright install chromium")
 
@@ -355,6 +357,7 @@ with tab_upload:
                 if "Podio Checked" not in df_up.columns:
                     df_up.insert(0, "Podio Checked", 0)
                 st.session_state.upload_df = df_up
+                st.session_state.trigger_download = False # Initialize the download flag
 
             df_upload = st.session_state.upload_df
             pending_count = len(df_upload[df_upload["Podio Checked"] == 0])
@@ -422,6 +425,9 @@ with tab_upload:
                         if cleared:
                             st.info(f"{len(cleared)} completely new companies saved to Local Database.")
                         
+                        # Set the flag to trigger the automatic download after page rerun
+                        st.session_state.trigger_download = True
+                        
                         time.sleep(1.5)
                         st.rerun()
             else:
@@ -429,8 +435,25 @@ with tab_upload:
             
             st.divider()
             
-            # Export the updated state with the 1s and 0s
             csv_data = st.session_state.upload_df.to_csv(index=False).encode('utf-8')
+            
+            # --- AUTOMATIC DOWNLOAD LOGIC ---
+            if st.session_state.get("trigger_download"):
+                st.session_state.trigger_download = False # Reset the flag so it only downloads once
+                
+                b64 = base64.b64encode(csv_data).decode()
+                filename = f"processed_{uploaded_file.name}.csv"
+                
+                # Inject JavaScript to automatically click an invisible download link
+                js_code = f"""
+                    <a id="auto-download" href="data:file/csv;base64,{b64}" download="{filename}"></a>
+                    <script>
+                        document.getElementById('auto-download').click();
+                    </script>
+                """
+                components.html(js_code, height=0)
+            
+            # Manual fallback download button
             st.download_button(
                 label="📥 Download Updated CSV (with Podio Checked Status)",
                 data=csv_data,
