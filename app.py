@@ -334,17 +334,19 @@ with tab_manual:
             st.rerun()
 
 # =========================================================================
-# TAB 3: UPLOAD CUSTOM LIST
+# TAB 3: UPLOAD CUSTOM LIST (UPDATED FOR AUTO-RUN)
 # =========================================================================
 with tab_upload:
     st.markdown("### 📁 Upload Custom Excel / CSV")
-    st.caption("Upload your list. The app tracks progress with a 'Podio Checked' binary column (1=Checked, 0=Pending) so you can process in batches.")
     
+    # Initialize auto-run state
+    if "auto_run" not in st.session_state:
+        st.session_state.auto_run = False
+        
     uploaded_file = st.file_uploader("Upload File (.xlsx, .csv)", type=["xlsx", "xls", "csv"])
     
     if uploaded_file:
         try:
-            # Use file properties as a unique ID to detect when a new file is uploaded
             file_id = f"{uploaded_file.name}_{uploaded_file.size}"
             if st.session_state.get("current_upload_id") != file_id:
                 st.session_state.current_upload_id = file_id
@@ -353,20 +355,18 @@ with tab_upload:
                 else:
                     df_up = pd.read_excel(uploaded_file)
                 
-                # Automatically add the binary tracking column if it doesn't exist
                 if "Podio Checked" not in df_up.columns:
                     df_up.insert(0, "Podio Checked", 0)
                 st.session_state.upload_df = df_up
-                st.session_state.trigger_download = False # Initialize the download flag
+                st.session_state.trigger_download = False
+                st.session_state.auto_run = False # Reset auto-run on new file
 
             df_upload = st.session_state.upload_df
             pending_count = len(df_upload[df_upload["Podio Checked"] == 0])
             
             st.info(f"**{pending_count}** companies remaining to be checked out of {len(df_upload)} total.")
-            st.dataframe(df_upload.head(10), use_container_width=True)
             
             col_options = df_upload.columns.tolist()
-            # Auto-detect "Account Name" if your CRM CSV uses it
             default_col = col_options.index("Account Name") if "Account Name" in col_options else 0
             name_col = st.selectbox("Which column contains the Company Name?", col_options, index=default_col)
             
@@ -381,9 +381,28 @@ with tab_upload:
                     batch_size = pending_count
 
             if pending_count > 0:
-                if st.button(f"🤖 Run Podio Check on {batch_size} Companies", type="primary"):
+                st.divider()
+                
+                # --- AUTO-RUN CONTROLS ---
+                btn_col1, btn_col2, btn_col3 = st.columns(3)
+                with btn_col1:
+                    if st.button("▶️ Start Auto-Run Pipeline", type="primary", use_container_width=True):
+                        st.session_state.auto_run = True
+                        st.rerun()
+                with btn_col2:
+                    if st.button("🛑 Stop Auto-Run", use_container_width=True):
+                        st.session_state.auto_run = False
+                        st.rerun()
+                with btn_col3:
+                    # Manual single batch button
+                    run_single = st.button(f"🤖 Run 1 Batch ({batch_size})", use_container_width=True)
+
+                if st.session_state.auto_run:
+                    st.warning("⚠️ Auto-Run is ACTIVE. The pipeline is running continuously...")
+
+                # Trigger logic: Execute if Auto-Run is ON, OR if user clicked single run
+                if st.session_state.auto_run or run_single:
                     
-                    # Extract only the exact batch of pending rows
                     pending_indices = df_upload[df_upload["Podio Checked"] == 0].head(batch_size).index
                     
                     custom_candidates = []
@@ -395,11 +414,12 @@ with tab_upload:
                                 "field": "Custom Upload",
                                 "location": "Custom Upload",
                                 "source": "Manual Upload",
-                                "_upload_idx": idx # Hidden ID to update the exact dataframe row later
+                                "_upload_idx": idx 
                             })
                             
                     if not custom_candidates:
                         st.warning("No valid company names found in the selected batch.")
+                        st.session_state.auto_run = False # Stop loop if error
                     else:
                         upload_status = st.empty()
                         upload_logs = []
@@ -407,44 +427,45 @@ with tab_upload:
                             upload_logs.append(msg)
                             upload_status.code("\n".join(upload_logs[-10:]))
                             
-                        with st.spinner(f"Processing {len(custom_candidates)} uploaded companies through Playwright..."):
+                        with st.spinner(f"Processing {len(custom_candidates)} uploaded companies..."):
                             ex1, ex2, cleared = podio_live_checker.analyze_leads_live(
                                 custom_candidates, st.session_state.podio_email, st.session_state.podio_password, prog_upload
                             )
                             
-                            # Update the binary column to 1 for all processed rows
                             for cand in custom_candidates:
                                 st.session_state.upload_df.loc[cand["_upload_idx"], "Podio Checked"] = 1
                             
                             for lead in cleared:
-                                lead.pop("_upload_idx", None) # Remove hidden ID before saving
+                                lead.pop("_upload_idx", None) 
                                 dedupe.add_company(lead)
                             dedupe.sync_to_google_sheets()
                             
-                        st.success(f"Upload Processed! ✅ {len(ex1)} routed to Deals, {len(ex2)} routed to Companies.")
-                        if cleared:
-                            st.info(f"{len(cleared)} completely new companies saved to Local Database.")
+                        st.success(f"Batch Processed! ✅ {len(ex1)} to Deals, {len(ex2)} to Companies.")
                         
-                        # Set the flag to trigger the automatic download after page rerun
-                        st.session_state.trigger_download = True
-                        
-                        time.sleep(1.5)
-                        st.rerun()
+                        # Loop logic
+                        if st.session_state.auto_run:
+                            time.sleep(2) # Brief pause before next batch hits Podio
+                            st.rerun() # Immediately reload page to trigger the next batch
+                        else:
+                            st.session_state.trigger_download = True
+                            time.sleep(1.5)
+                            st.rerun()
             else:
+                st.session_state.auto_run = False # Turn off auto-run when finished
                 st.success("🎉 All companies in this file have been checked! You can download the finalized file below.")
             
             st.divider()
             
             csv_data = st.session_state.upload_df.to_csv(index=False).encode('utf-8')
             
-            # --- AUTOMATIC DOWNLOAD LOGIC ---
-            if st.session_state.get("trigger_download"):
-                st.session_state.trigger_download = False # Reset the flag so it only downloads once
+            # Auto-download logic triggers when manual batch finishes, or when auto-run finishes everything
+            if st.session_state.get("trigger_download") or (pending_count == 0 and "downloaded" not in st.session_state):
+                st.session_state.trigger_download = False 
+                st.session_state.downloaded = True 
                 
                 b64 = base64.b64encode(csv_data).decode()
                 filename = f"processed_{uploaded_file.name}.csv"
                 
-                # Inject JavaScript to automatically click an invisible download link
                 js_code = f"""
                     <a id="auto-download" href="data:file/csv;base64,{b64}" download="{filename}"></a>
                     <script>
@@ -453,7 +474,6 @@ with tab_upload:
                 """
                 components.html(js_code, height=0)
             
-            # Manual fallback download button
             st.download_button(
                 label="📥 Download Updated CSV (with Podio Checked Status)",
                 data=csv_data,
@@ -463,6 +483,7 @@ with tab_upload:
             
         except Exception as e:
             st.error(f"Error processing file: {e}")
+            st.session_state.auto_run = False # Failsafe to break loop on error
 # =========================================================================
 # TAB 4: TEAM ACTION HUB
 # =========================================================================
