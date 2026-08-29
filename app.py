@@ -336,58 +336,110 @@ with tab_manual:
 # =========================================================================
 with tab_upload:
     st.markdown("### 📁 Upload Custom Excel / CSV")
-    st.caption("Upload your own list of companies to automatically check them against Podio and route to Excel 1 & 2.")
+    st.caption("Upload your list. The app tracks progress with a 'Podio Checked' binary column (1=Checked, 0=Pending) so you can process in batches.")
     
     uploaded_file = st.file_uploader("Upload File (.xlsx, .csv)", type=["xlsx", "xls", "csv"])
     
     if uploaded_file:
         try:
-            if uploaded_file.name.endswith(".csv"):
-                df_upload = pd.read_csv(uploaded_file)
-            else:
-                df_upload = pd.read_excel(uploaded_file)
+            # Use file properties as a unique ID to detect when a new file is uploaded
+            file_id = f"{uploaded_file.name}_{uploaded_file.size}"
+            if st.session_state.get("current_upload_id") != file_id:
+                st.session_state.current_upload_id = file_id
+                if uploaded_file.name.endswith(".csv"):
+                    df_up = pd.read_csv(uploaded_file)
+                else:
+                    df_up = pd.read_excel(uploaded_file)
                 
-            st.dataframe(df_upload.head(5), use_container_width=True)
+                # Automatically add the binary tracking column if it doesn't exist
+                if "Podio Checked" not in df_up.columns:
+                    df_up.insert(0, "Podio Checked", 0)
+                st.session_state.upload_df = df_up
+
+            df_upload = st.session_state.upload_df
+            pending_count = len(df_upload[df_upload["Podio Checked"] == 0])
+            
+            st.info(f"**{pending_count}** companies remaining to be checked out of {len(df_upload)} total.")
+            st.dataframe(df_upload.head(10), use_container_width=True)
             
             col_options = df_upload.columns.tolist()
-            name_col = st.selectbox("Which column contains the Company Name?", col_options)
+            # Auto-detect "Account Name" if your CRM CSV uses it
+            default_col = col_options.index("Account Name") if "Account Name" in col_options else 0
+            name_col = st.selectbox("Which column contains the Company Name?", col_options, index=default_col)
             
-            if st.button("🤖 Run Podio Check on Uploaded List", type="primary"):
-                custom_candidates = []
-                for _, row in df_upload.iterrows():
-                    comp_name = str(row[name_col]).strip()
-                    if comp_name and comp_name.lower() != "nan":
-                        custom_candidates.append({
-                            "name": comp_name,
-                            "field": "Custom Upload",
-                            "location": "Custom Upload",
-                            "source": "Manual Upload"
-                        })
-                        
-                if not custom_candidates:
-                    st.warning("No valid company names found in the selected column.")
+            # Batch Controls
+            col_mode, col_size = st.columns(2)
+            with col_mode:
+                process_mode = st.radio("Processing Mode:", ["Batch Processing", "Process All Remaining"])
+            with col_size:
+                if process_mode == "Batch Processing":
+                    batch_size = st.slider("Batch Size", 5, 100, 25)
                 else:
-                    upload_status = st.empty()
-                    upload_logs = []
-                    def prog_upload(msg):
-                        upload_logs.append(msg)
-                        upload_status.code("\n".join(upload_logs[-10:]))
+                    batch_size = pending_count
+
+            if pending_count > 0:
+                if st.button(f"🤖 Run Podio Check on {batch_size} Companies", type="primary"):
+                    
+                    # Extract only the exact batch of pending rows
+                    pending_indices = df_upload[df_upload["Podio Checked"] == 0].head(batch_size).index
+                    
+                    custom_candidates = []
+                    for idx in pending_indices:
+                        comp_name = str(df_upload.loc[idx, name_col]).strip()
+                        if comp_name and comp_name.lower() != "nan":
+                            custom_candidates.append({
+                                "name": comp_name,
+                                "field": "Custom Upload",
+                                "location": "Custom Upload",
+                                "source": "Manual Upload",
+                                "_upload_idx": idx # Hidden ID to update the exact dataframe row later
+                            })
+                            
+                    if not custom_candidates:
+                        st.warning("No valid company names found in the selected batch.")
+                    else:
+                        upload_status = st.empty()
+                        upload_logs = []
+                        def prog_upload(msg):
+                            upload_logs.append(msg)
+                            upload_status.code("\n".join(upload_logs[-10:]))
+                            
+                        with st.spinner(f"Processing {len(custom_candidates)} uploaded companies through Playwright..."):
+                            ex1, ex2, cleared = podio_live_checker.analyze_leads_live(
+                                custom_candidates, st.session_state.podio_email, st.session_state.podio_password, prog_upload
+                            )
+                            
+                            # Update the binary column to 1 for all processed rows
+                            for cand in custom_candidates:
+                                st.session_state.upload_df.loc[cand["_upload_idx"], "Podio Checked"] = 1
+                            
+                            for lead in cleared:
+                                lead.pop("_upload_idx", None) # Remove hidden ID before saving
+                                dedupe.add_company(lead)
+                            dedupe.sync_to_google_sheets()
+                            
+                        st.success(f"Upload Processed! ✅ {len(ex1)} routed to Deals, {len(ex2)} routed to Companies.")
+                        if cleared:
+                            st.info(f"{len(cleared)} completely new companies saved to Local Database.")
                         
-                    with st.spinner(f"Processing {len(custom_candidates)} uploaded companies through Playwright..."):
-                        ex1, ex2, cleared = podio_live_checker.analyze_leads_live(
-                            custom_candidates, st.session_state.podio_email, st.session_state.podio_password, prog_upload
-                        )
-                        
-                        for lead in cleared:
-                            dedupe.add_company(lead)
-                        dedupe.sync_to_google_sheets()
-                        
-                    st.success(f"Upload Processed! ✅ {len(ex1)} routed to Deals (Excel 1), {len(ex2)} routed to Companies (Excel 2).")
-                    if cleared:
-                        st.info(f"{len(cleared)} companies were completely new and have been saved to your Local Database.")
+                        time.sleep(1.5)
+                        st.rerun()
+            else:
+                st.success("🎉 All companies in this file have been checked! You can download the finalized file below.")
+            
+            st.divider()
+            
+            # Export the updated state with the 1s and 0s
+            csv_data = st.session_state.upload_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Updated CSV (with Podio Checked Status)",
+                data=csv_data,
+                file_name=f"processed_{uploaded_file.name}.csv",
+                mime="text/csv"
+            )
+            
         except Exception as e:
             st.error(f"Error processing file: {e}")
-
 # =========================================================================
 # TAB 4: TEAM ACTION HUB
 # =========================================================================
