@@ -484,6 +484,7 @@ with tab_upload:
         except Exception as e:
             st.error(f"Error processing file: {e}")
             st.session_state.auto_run = False # Failsafe to break loop on error
+
 # =========================================================================
 # TAB 4: TEAM ACTION HUB
 # =========================================================================
@@ -559,46 +560,62 @@ with tab_database:
     is_admin = st.session_state.get("is_admin", False)
     existing = dedupe.all_companies(include_confirmed=is_admin)
     
-    if is_admin:
-        st.markdown(f"### 📋 Local Master Database - ADMIN VIEW ({len(existing)} companies)")
-        st.caption("Admin mode: Viewing ALL companies including Checked ones.")
-    else:
-        st.markdown(f"### 📋 Local Master Database ({len(existing)} pending companies)")
-        st.caption("Checked companies are hidden from this view. Use the Admin panel to inspect checked leads.")
-    
     if existing:
         df_local = pd.DataFrame(existing)
-        df_local["Status"] = df_local["confirmed"].apply(lambda x: "Checked" if x == 1 else "Pending")
-
-        col_db_sel, col_db_btn = st.columns([3, 1])
-        with col_db_sel:
-            chosen_comp = st.selectbox("Select company to update status:", df_local["name"].tolist(), key="local_db_comp_select")
-        with col_db_btn:
-            st.write("")
-            st.write("")
-            if chosen_comp:
-                is_checked = df_local.loc[df_local["name"] == chosen_comp, "confirmed"].values[0] == 1
-                btn_txt = "Uncheck" if is_checked else "✅ Check & Lock"
-                if st.button(btn_txt, key="btn_local_db_confirm"):
-                    confirm_status_dialog("local", chosen_comp, is_checked)
-
-        df_local = apply_lead_scoring(df_local)
-
-        display_cols = ["Lead Score", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
-        clean_display_cols = [c for c in display_cols if c in df_local.columns]
         
-        st.dataframe(
-            df_local[clean_display_cols].style.apply(highlight_green, axis=1),
-            column_config={
-                "website": st.column_config.LinkColumn(),
-                "source_url": st.column_config.LinkColumn(),
-                "linkedin": st.column_config.LinkColumn(),
-                "checked_date": st.column_config.TextColumn("Date Checked"),
-                "Lead Score": st.column_config.TextColumn("Score")
-            },
-            use_container_width=True
-        )
+        # --- NEW: Filter out "Manual Upload" sources ---
+        if "source" in df_local.columns:
+            df_local = df_local[df_local["source"] != "Manual Upload"]
+        elif "Source" in df_local.columns:
+            df_local = df_local[df_local["Source"] != "Manual Upload"]
+
+        display_count = len(df_local)
+
+        if is_admin:
+            st.markdown(f"### 📋 Local Master Database - ADMIN VIEW ({display_count} companies)")
+            st.caption("Admin mode: Viewing ALL companies including Checked ones.")
+        else:
+            st.markdown(f"### 📋 Local Master Database ({display_count} pending companies)")
+            st.caption("Checked companies are hidden from this view. Use the Admin panel to inspect checked leads.")
+        
+        if df_local.empty:
+            st.info("No available companies to display.")
+        else:
+            df_local["Status"] = df_local["confirmed"].apply(lambda x: "Checked" if x == 1 else "Pending")
+
+            col_db_sel, col_db_btn = st.columns([3, 1])
+            with col_db_sel:
+                chosen_comp = st.selectbox("Select company to update status:", df_local["name"].tolist(), key="local_db_comp_select")
+            with col_db_btn:
+                st.write("")
+                st.write("")
+                if chosen_comp:
+                    is_checked = df_local.loc[df_local["name"] == chosen_comp, "confirmed"].values[0] == 1
+                    btn_txt = "Uncheck" if is_checked else "✅ Check & Lock"
+                    if st.button(btn_txt, key="btn_local_db_confirm"):
+                        confirm_status_dialog("local", chosen_comp, is_checked)
+
+            df_local = apply_lead_scoring(df_local)
+
+            display_cols = ["Lead Score", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
+            clean_display_cols = [c for c in display_cols if c in df_local.columns]
+            
+            st.dataframe(
+                df_local[clean_display_cols].style.apply(highlight_green, axis=1),
+                column_config={
+                    "website": st.column_config.LinkColumn(),
+                    "source_url": st.column_config.LinkColumn(),
+                    "linkedin": st.column_config.LinkColumn(),
+                    "checked_date": st.column_config.TextColumn("Date Checked"),
+                    "Lead Score": st.column_config.TextColumn("Score")
+                },
+                use_container_width=True
+            )
     else:
+        if is_admin:
+            st.markdown("### 📋 Local Master Database - ADMIN VIEW (0 companies)")
+        else:
+            st.markdown("### 📋 Local Master Database (0 pending companies)")
         st.info("No available companies to display.")
 
 # =========================================================================
