@@ -486,7 +486,7 @@ with tab_upload:
             st.session_state.auto_run = False # Failsafe to break loop on error
 
 # =========================================================================
-# TAB 4: TEAM ACTION HUB (ROW-SELECTION CHECKBOXES)
+# TAB 4: TEAM ACTION Hub (ROW-SELECTION CHECKBOXES)
 # =========================================================================
 with tab_action_hub:
     st.markdown("### Team Action Hub (Google Sheets)")
@@ -515,11 +515,16 @@ with tab_action_hub:
                         ws.update([df.columns.values.tolist()] + df.values.tolist())
 
                     df_display = apply_lead_scoring(df)
+                    
+                    # FIX: Reset index and add explicit "No." column to restore row numbering
+                    df_display.reset_index(drop=True, inplace=True)
+                    df_display.insert(0, "No.", df_display.index + 1)
 
                     # Native row-level select
                     event = st.dataframe(
                         df_display.style.apply(highlight_green, axis=1),
                         column_config={
+                            "No.": st.column_config.NumberColumn("No.", width="small"),
                             "Deal Link": st.column_config.LinkColumn(),
                             "Company Link": st.column_config.LinkColumn(),
                             "Checked_Date": st.column_config.TextColumn("Date Used"),
