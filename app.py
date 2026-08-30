@@ -486,7 +486,7 @@ with tab_upload:
             st.session_state.auto_run = False # Failsafe to break loop on error
 
 # =========================================================================
-# TAB 4: TEAM ACTION HUB
+# TAB 4: TEAM ACTION HUB (ROW-SELECTION CHECKBOXES)
 # =========================================================================
 with tab_action_hub:
     st.markdown("### Team Action Hub (Google Sheets)")
@@ -514,22 +514,10 @@ with tab_action_hub:
                         ws.clear()
                         ws.update([df.columns.values.tolist()] + df.values.tolist())
 
-                    col_sel, col_btn = st.columns([3, 1])
-                    with col_sel:
-                        company_names = df["Company Name"].tolist() if "Company Name" in df.columns else df.iloc[:, 0].tolist()
-                        selected_target = st.selectbox(f"Select company to change status ({ws_name}):", company_names, key=f"select_{ws_name}")
-                    with col_btn:
-                        st.write("")
-                        st.write("")
-                        target_row_idx = company_names.index(selected_target)
-                        current_state = df.at[target_row_idx, "Status"] == "Checked"
-                        btn_label = "Uncheck" if current_state else "✅ Check & Use"
-                        if st.button(btn_label, key=f"btn_pop_{ws_name}"):
-                            confirm_status_dialog("sheet", selected_target, current_state, target_row_idx, ws_name)
-
                     df_display = apply_lead_scoring(df)
 
-                    st.dataframe(
+                    # Native row-level select
+                    event = st.dataframe(
                         df_display.style.apply(highlight_green, axis=1),
                         column_config={
                             "Deal Link": st.column_config.LinkColumn(),
@@ -537,8 +525,23 @@ with tab_action_hub:
                             "Checked_Date": st.column_config.TextColumn("Date Used"),
                             "Lead Score": st.column_config.TextColumn("Score")
                         },
-                        use_container_width=True
+                        use_container_width=True,
+                        on_select="rerun",
+                        selection_mode="single-row",
+                        key=f"hub_table_{ws_name}"
                     )
+
+                    selected_rows = event.selection.rows
+                    if selected_rows:
+                        target_row_idx = selected_rows[0]
+                        comp_col = "Company Name" if "Company Name" in df.columns else df.columns[0]
+                        selected_target = str(df.at[target_row_idx, comp_col])
+                        current_state = df.at[target_row_idx, "Status"] == "Checked"
+                        
+                        btn_label = f"Uncheck '{selected_target}'" if current_state else f"✅ Check & Use '{selected_target}'"
+                        if st.button(btn_label, type="primary", key=f"btn_hub_select_{ws_name}"):
+                            confirm_status_dialog("sheet", selected_target, current_state, target_row_idx, ws_name)
+
                 except Exception as ex:
                     st.info(f"Tab '{ws_name}' is currently empty or loading: {ex}")
 
@@ -552,7 +555,7 @@ with tab_action_hub:
         st.warning("⚠️ Google Sheets credentials are not configured in Streamlit Secrets.")
 
 # =========================================================================
-# TAB 5: LOCAL DATABASE
+# TAB 5: LOCAL DATABASE (ROW-SELECTION CHECKBOXES)
 # =========================================================================
 with tab_database:
     dedupe.init_db()
@@ -563,7 +566,7 @@ with tab_database:
     if existing:
         df_local = pd.DataFrame(existing)
         
-        # --- NEW: Filter out "Manual Upload" sources ---
+        # Filter out "Manual Upload" sources
         if "source" in df_local.columns:
             df_local = df_local[df_local["source"] != "Manual Upload"]
         elif "Source" in df_local.columns:
@@ -582,26 +585,15 @@ with tab_database:
             st.info("No available companies to display.")
         else:
             df_local["Status"] = df_local["confirmed"].apply(lambda x: "Checked" if x == 1 else "Pending")
-
-            col_db_sel, col_db_btn = st.columns([3, 1])
-            with col_db_sel:
-                chosen_comp = st.selectbox("Select company to update status:", df_local["name"].tolist(), key="local_db_comp_select")
-            with col_db_btn:
-                st.write("")
-                st.write("")
-                if chosen_comp:
-                    is_checked = df_local.loc[df_local["name"] == chosen_comp, "confirmed"].values[0] == 1
-                    btn_txt = "Uncheck" if is_checked else "✅ Check & Lock"
-                    if st.button(btn_txt, key="btn_local_db_confirm"):
-                        confirm_status_dialog("local", chosen_comp, is_checked)
-
             df_local = apply_lead_scoring(df_local)
 
             display_cols = ["Lead Score", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
             clean_display_cols = [c for c in display_cols if c in df_local.columns]
-            
-            st.dataframe(
-                df_local[clean_display_cols].style.apply(highlight_green, axis=1),
+            df_display = df_local[clean_display_cols]
+
+            # 1. Display table with native checkboxes on the left of each row
+            selection_event = st.dataframe(
+                df_display.style.apply(highlight_green, axis=1),
                 column_config={
                     "website": st.column_config.LinkColumn(),
                     "source_url": st.column_config.LinkColumn(),
@@ -609,15 +601,31 @@ with tab_database:
                     "checked_date": st.column_config.TextColumn("Date Checked"),
                     "Lead Score": st.column_config.TextColumn("Score")
                 },
-                use_container_width=True
+                use_container_width=True,
+                on_select="rerun",
+                selection_mode="multi-row",
+                key="local_db_table_select"
             )
-    else:
-        if is_admin:
-            st.markdown("### 📋 Local Master Database - ADMIN VIEW (0 companies)")
-        else:
-            st.markdown("### 📋 Local Master Database (0 pending companies)")
-        st.info("No available companies to display.")
 
+            # 2. Extract selected rows from the checkboxes
+            selected_row_indices = selection_event.selection.rows
+            
+            if selected_row_indices:
+                selected_companies = df_display.iloc[selected_row_indices]["name"].tolist()
+                
+                col_act1, col_act2 = st.columns([2, 1])
+                with col_act1:
+                    st.info(f"Selected **{len(selected_companies)}** company(s): {', '.join(selected_companies[:3])}{'...' if len(selected_companies) > 3 else ''}")
+                with col_act2:
+                    if st.button(f"✅ Mark Selected as Checked ({len(selected_companies)})", type="primary", use_container_width=True):
+                        for comp in selected_companies:
+                            dedupe.update_company_status(comp, True)
+                        st.success(f"Updated {len(selected_companies)} companies to Checked!")
+                        time.sleep(0.8)
+                        st.rerun()
+    else:
+        st.markdown("### 📋 Local Master Database (0 pending companies)")
+        st.info("No available companies to display.")
 # =========================================================================
 # TAB 6: ADMIN CONTROLS
 # =========================================================================
