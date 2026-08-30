@@ -582,19 +582,27 @@ with tab_database:
             st.caption("Checked companies are hidden from this view. Use the Admin panel to inspect checked leads.")
         
         if df_local.empty:
-            st.info("No available companies to display.")
+            st.warning("⚠️ All current pending companies are from 'Manual Uploads' and are hidden from this view.")
         else:
+            # FIX 1: Reset index after filtering so Streamlit's checkbox row selections match perfectly
+            df_local.reset_index(drop=True, inplace=True)
+            
+            # FIX 2: Explicitly add a Number column since Streamlit checkboxes hide the default index
+            df_local.insert(0, "No.", df_local.index + 1)
+            
             df_local["Status"] = df_local["confirmed"].apply(lambda x: "Checked" if x == 1 else "Pending")
             df_local = apply_lead_scoring(df_local)
 
-            display_cols = ["Lead Score", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
+            # Include "No." as the very first display column
+            display_cols = ["No.", "Lead Score", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
             clean_display_cols = [c for c in display_cols if c in df_local.columns]
             df_display = df_local[clean_display_cols]
 
-            # 1. Display table with native checkboxes on the left of each row
+            # Display table with native checkboxes on the left of each row
             selection_event = st.dataframe(
                 df_display.style.apply(highlight_green, axis=1),
                 column_config={
+                    "No.": st.column_config.NumberColumn("No.", width="small"),
                     "website": st.column_config.LinkColumn(),
                     "source_url": st.column_config.LinkColumn(),
                     "linkedin": st.column_config.LinkColumn(),
@@ -607,7 +615,7 @@ with tab_database:
                 key="local_db_table_select"
             )
 
-            # 2. Extract selected rows from the checkboxes
+            # Extract selected rows from the checkboxes
             selected_row_indices = selection_event.selection.rows
             
             if selected_row_indices:
