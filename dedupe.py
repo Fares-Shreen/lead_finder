@@ -355,3 +355,11 @@ def remove_suspects_from_sheet(names_to_remove):
             worksheet.update([df.columns.values.tolist()] + df.values.tolist())
     except Exception as e:
         print(f"Error removing suspects: {e}")
+
+def reassign_company(name: str, new_email: str):
+    with _conn() as c:
+        c.execute(
+            "UPDATE companies SET created_by = ? WHERE name_normalized = ?",
+            (new_email, _normalize(name)),
+        )
+    sync_to_google_sheets()
