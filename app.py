@@ -340,7 +340,7 @@ with tab_search:
             st.session_state.auto_run_active = False
         else:
             if restart and not st.session_state.auto_run_active:
-                dedupe.init_db()
+                
                 for s in sources:
                     for f in fields_to_search:
                         dedupe.reset_search_offset(s, f, location)
