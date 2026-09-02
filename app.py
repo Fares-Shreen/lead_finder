@@ -8,6 +8,7 @@ import requests
 import pandas as pd
 import streamlit as st
 from streamlit import components
+from streamlit_cookies_controller import CookieController  # <-- NEW IMPORT
 
 os.system("playwright install chromium")
 
@@ -52,6 +53,9 @@ st.markdown(aiesec_style, unsafe_allow_html=True)
 # =========================================================================
 # SESSION & AUTHENTICATION STATE
 # =========================================================================
+# Initialize cookie controller
+cookies = CookieController()
+
 if "authenticated" not in st.session_state: st.session_state.authenticated = False
 if "user_email" not in st.session_state: st.session_state.user_email = ""
 if "user_function" not in st.session_state: st.session_state.user_function = ""
@@ -62,6 +66,18 @@ if "podio_email" not in st.session_state: st.session_state.podio_email = os.envi
 if "podio_password" not in st.session_state: st.session_state.podio_password = os.environ.get("PODIO_PASSWORD", "")
 if "auto_run_active" not in st.session_state: st.session_state.auto_run_active = False
 if "auto_run_cycle" not in st.session_state: st.session_state.auto_run_cycle = 0
+
+# --- AUTO-LOGIN VIA COOKIES ---
+if not st.session_state.authenticated:
+    saved_email = cookies.get("aiesec_email")
+    saved_func = cookies.get("aiesec_func")
+    
+    if saved_email and saved_func:
+        st.session_state.authenticated = True
+        st.session_state.user_email = saved_email
+        st.session_state.user_function = saved_func
+        st.session_state.is_admin = (saved_func.upper() == "ADMIN")
+        st.rerun()
 
 # -------------------------------------------------------------------------
 # LOGIN GATE
@@ -86,6 +102,11 @@ if not st.session_state.authenticated:
                     st.session_state.user_email = user_info["Email"]
                     st.session_state.user_function = user_info["Function"]
                     st.session_state.is_admin = (user_info["Function"].upper() == "ADMIN")
+                    
+                    # --- SAVE COOKIES FOR 30 DAYS ---
+                    cookies.set("aiesec_email", user_info["Email"], max_age=30*24*60*60)
+                    cookies.set("aiesec_func", user_info["Function"], max_age=30*24*60*60)
+                    
                     st.success(f"Welcome back, {user_info['Email']}!")
                     time.sleep(0.5)
                     st.rerun()
@@ -105,8 +126,14 @@ with st.sidebar:
     
     st.divider()
     if st.button("🚪 Log Out", use_container_width=True):
+        # --- WIPE COOKIES ON LOGOUT ---
+        cookies.remove("aiesec_email")
+        cookies.remove("aiesec_func")
+        
         for key in ["authenticated", "user_email", "user_function", "is_admin"]:
             st.session_state[key] = False if type(st.session_state[key]) == bool else ""
+            
+        time.sleep(0.5) # Give browser time to delete cookies
         st.rerun()
 
 st.title("AIESEC B2B Lead Engine")
@@ -248,7 +275,7 @@ if st.session_state.is_admin:
     tab_admin = tabs[5]
 
 # =========================================================================
-# TAB 1: RUN SEARCH (PODIO CREDENTIALS NOT REQUIRED)
+# TAB 1: RUN SEARCH
 # =========================================================================
 with tab_search:
     st.markdown("### 🔎 Market Research & Discovery")
@@ -312,7 +339,6 @@ with tab_search:
             st.warning("⚠️ Please select fields and sources.")
             st.session_state.auto_run_active = False
         else:
-            # Podio credentials are not required for standard search
             if restart and not st.session_state.auto_run_active:
                 dedupe.init_db()
                 for s in sources:
@@ -349,7 +375,7 @@ with tab_search:
                     st.rerun()
 
 # =========================================================================
-# TAB 2: MANUAL DEEP CHECK (PODIO CREDENTIALS MANDATORY)
+# TAB 2: MANUAL DEEP CHECK (PLAYWRIGHT)
 # =========================================================================
 with tab_manual:
     st.markdown("### 🕵️ Need Podio Check Queue")
@@ -401,7 +427,7 @@ with tab_manual:
                 st.rerun()
 
 # =========================================================================
-# TAB 3: UPLOAD CUSTOM LIST (PODIO CREDENTIALS MANDATORY)
+# TAB 3: UPLOAD CUSTOM LIST (UPDATED FOR AUTO-RUN)
 # =========================================================================
 with tab_upload:
     st.markdown("### 📁 Upload Custom Excel / CSV")
@@ -469,7 +495,6 @@ with tab_upload:
                     st.warning("⚠️ Auto-Run is ACTIVE. The pipeline is running continuously...")
 
                 if st.session_state.auto_run or run_single:
-                    # Podio credentials required for custom list verification
                     if not st.session_state.podio_email or not st.session_state.podio_password:
                         st.error("⚠️ Podio Email and Password are required to verify uploaded companies. Please configure them in the header expander.")
                         st.session_state.auto_run = False
@@ -638,17 +663,14 @@ with tab_database:
     if existing:
         df_local = pd.DataFrame(existing)
         
-        if "function_type" not in df_local.columns:
-            df_local["function_type"] = "IGT"
-        if "created_by" not in df_local.columns:
-            df_local["created_by"] = ""
+        if "function_type" not in df_local.columns: df_local["function_type"] = "IGT"
+        if "created_by" not in df_local.columns: df_local["created_by"] = ""
             
         if "source" in df_local.columns:
             df_local = df_local[df_local["source"] != "Manual Upload"]
         elif "Source" in df_local.columns:
             df_local = df_local[df_local["Source"] != "Manual Upload"]
 
-        # USER DATA ISOLATION: Non-admins strictly see only accounts they personally researched
         if not st.session_state.is_admin:
             df_local = df_local[
                 (df_local["function_type"] == st.session_state.user_function) & 
@@ -733,7 +755,6 @@ if st.session_state.is_admin:
             "⚠️ Danger Zone"
         ])
 
-        # --- SUB-TAB 1: ACCOUNT MANAGEMENT ---
         with tab_users:
             st.subheader("Manage User Accounts")
             
@@ -776,7 +797,6 @@ if st.session_state.is_admin:
             else:
                 st.info("No accounts currently registered.")
 
-        # --- SUB-TAB 2: FUNCTION & RESEARCHER DASHBOARD ---
         with tab_dash:
             st.subheader("📊 Performance & Activity Dashboard")
             
@@ -794,7 +814,6 @@ if st.session_state.is_admin:
                     users_filter_list = ["All Researchers"] + sorted(raw_users)
                     selected_researcher = st.selectbox("Filter by Researcher:", users_filter_list)
 
-                # Filter down
                 df_admin_filtered = df_all.copy()
                 if chosen_func != "All":
                     df_admin_filtered = df_admin_filtered[df_admin_filtered["function_type"] == chosen_func]
@@ -818,7 +837,6 @@ if st.session_state.is_admin:
             else:
                 st.info("No company records found in the database yet.")
 
-        # --- SUB-TAB 3: CHECKED COMPANIES ---
         with tab_checked:
             st.subheader("🟢 Checked / Used Companies in Local Database")
             checked_list = dedupe.confirmed_companies()
@@ -856,7 +874,6 @@ if st.session_state.is_admin:
             else:
                 st.info("No companies are currently marked as Checked / Used in the Local Database.")
 
-        # --- SUB-TAB 4: DELETE FROM DB ---
         with tab_del:
             st.caption("Delete records from the master Local Database only.")
             names = [c["name"] for c in dedupe.all_companies(include_confirmed=True)]
@@ -868,7 +885,6 @@ if st.session_state.is_admin:
                     time.sleep(0.5)
                     st.rerun()
 
-        # --- SUB-TAB 5: DANGER ZONE ---
         with tab_danger:
             st.error("Wiping the database will clear all saved companies and reset search progress.")
             if st.button("🧨 Wipe Local Database", type="primary"):

@@ -1,10 +1,11 @@
 streamlit>=1.35
+streamlit-cookies-controller
+pandas
 requests>=2.31
-# (SerpApi is called via plain requests, no extra SDK needed)
 beautifulsoup4>=4.12
 openpyxl>=3.1
-playwright>=1.40   # Clutch's Cloudflare fallback — after installing, also run:
-                   #   playwright install chromium
+xlsxwriter
+playwright>=1.40
 gspread
 google-auth
 dnspython
