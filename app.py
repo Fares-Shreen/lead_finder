@@ -290,7 +290,7 @@ with tab_search:
     with col1:
         field_choices = st.multiselect(
             "Select Fields",
-            ["Software", "IT", "Digital Marketing", "Sales", "Video Editing", "Accounting", "English Center", "French Center"],
+            ["Software", "IT", "Digital Marketing", "Sales", "Video Editing", "Accounting", "English Center", "French Center","English Academy","French Academy"," Real Estate", "Construction", "Logistics", "Manufacturing", "Education", "Healthcare", "Tourism & Hospitality", "Food & Beverage", "Retail", "E-commerce", "Consulting", "Legal Services", "Financial Services", "Telecommunications", "Media & Entertainment", "Automotive", "Energy & Utilities", "Nonprofit & NGO"],
             default=["Software"]
         )
     with col2:
