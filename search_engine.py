@@ -1,4 +1,3 @@
-import concurrent.futures
 import requests
 from urllib.parse import urlparse, quote
 
@@ -41,30 +40,27 @@ def podio_api_precheck(company_name: str) -> bool:
 def process(field, location, sources, num_per_source, progress_cb=None, api_key=None, podio_email=None, podio_password=None, function_type="IGT", created_by=""):
     raw_candidates = []
     
-    if progress_cb: progress_cb("📥 Launching scrapers simultaneously...")
-    def fetch_source(source_name):
+    if progress_cb: progress_cb("📥 Launching scrapers (bypassing bot protections)...")
+    
+    # FIX: Run scrapers sequentially instead of concurrently to prevent Playwright ThreadPool crashes
+    for source_name in sources:
+        if progress_cb: progress_cb(f"⏳ Scraping {source_name}...")
+        
         offset = dedupe.get_search_offset(source_name, field, location)
         try:
             results = SOURCE_FUNCS[source_name](field, location, num_per_source, offset, api_key)
             dedupe.advance_search_offset(source_name, field, location, OFFSET_STEP.get(source_name, 10))
-            return source_name, results, None
+            
+            for r in results:
+                r["field"] = field
+                r["location"] = location
+                r["function_type"] = function_type
+                r["created_by"] = created_by
+                raw_candidates.append(r)
+                
+            if progress_cb: progress_cb(f"✅ {source_name}: Found {len(results)} leads.")
         except Exception as e:
-            return source_name, [], str(e)
-
-    with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as executor:
-        futures = [executor.submit(fetch_source, s) for s in sources]
-        for future in concurrent.futures.as_completed(futures):
-            source_name, results, error = future.result()
-            if error:
-                if progress_cb: progress_cb(f"❌ Error in {source_name}: {error}")
-            else:
-                for r in results:
-                    r["field"] = field
-                    r["location"] = location
-                    # Stamp the lead with the active function role AND the researcher's email
-                    r["function_type"] = function_type
-                    r["created_by"] = created_by
-                    raw_candidates.append(r)
+            if progress_cb: progress_cb(f"❌ Error in {source_name}: {e}")
 
     filtered_candidates = []
     seen_names = set()
@@ -85,8 +81,8 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
         if domain: seen_domains.add(domain)
         filtered_candidates.append(lead)
 
-    # NEW STEP: ENRICH EVERYTHING UPFRONT BEFORE PODIO CHECK
-    if progress_cb: progress_cb(f"✨ Deeply enriching {len(filtered_candidates)} candidates upfront...")
+    # ENRICH EVERYTHING UPFRONT
+    if progress_cb: progress_cb(f"✨ Deeply enriching {len(filtered_candidates)} unique candidates...")
     
     fully_enriched_candidates = []
     for lead in filtered_candidates:

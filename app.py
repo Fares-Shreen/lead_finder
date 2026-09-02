@@ -1,4 +1,5 @@
 import base64
+import subprocess
 import os
 import sys
 import time
@@ -10,7 +11,7 @@ import streamlit as st
 from streamlit import components
 from streamlit_cookies_controller import CookieController  # <-- NEW IMPORT
 
-os.system("playwright install chromium")
+subprocess.run(["playwright", "install", "chromium"], check=False)
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
