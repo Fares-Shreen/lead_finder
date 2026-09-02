@@ -21,34 +21,57 @@ from search_engine import process
 import podio_live_checker
 import account_manager
 
-# =========================================================================
-# PAGE CONFIG & AIESEC BRANDING CSS
-# =========================================================================
 st.set_page_config(page_title="AIESEC Lead Engine", page_icon="👤", layout="wide")
 
+
+
 AIESEC_LOGO_URL = "./AIESEC-Human-Blue.png"
+
 AIESEC_BLUE = "#037ef3"
 
+
+
 aiesec_style = f"""
+
     <style>
+
     div[data-testid="stToolbar"] {{visibility: hidden;}}
+
     #MainMenu {{visibility: hidden;}}
+
     footer {{visibility: hidden;}}
 
+
+
     .stButton>button[kind="primary"] {{
-        background-color: {AIESEC_BLUE}; 
+
+        background-color: {AIESEC_BLUE};
+
         color: white;
+
         border: none;
+
     }}
+
     .stButton>button[kind="primary"]:hover {{
+
         background-color: #0266c8;
+
     }}
+
     h1, h2, h3 {{
+
         color: {AIESEC_BLUE} !important;
+
     }}
+
     </style>
+
 """
-st.markdown(aiesec_style, unsafe_allow_html=True)
+
+st.markdown(aiesec_style, unsafe_allow_html=True) 
+
+
 
 # =========================================================================
 # SESSION & AUTHENTICATION STATE
