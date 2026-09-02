@@ -3,35 +3,48 @@ import requests
 def search_indeed(field, location, num_results, start=0, api_key=None):
     if not api_key: raise Exception("No SerpApi key provided.")
     
-    # Searches both the global and Egyptian Indeed domains, and removes the strict /cmp filter
-    query = f'{field} "{location}" (site:eg.indeed.com OR site:indeed.com)'
+    city = location.split(",")[0].strip()
+    query = f'{field} "{city}" (site:eg.indeed.com OR site:indeed.com)'
     
     params = {
         "engine": "google",
         "q": query,
         "api_key": api_key,
-        "num": min(num_results, 20),
+        "num": 20,
         "start": start
     }
     
     res = requests.get("https://serpapi.com/search", params=params, timeout=15)
     data = res.json()
-    
-    if "error" in data: 
-        raise Exception(f"SerpApi Error: {data['error']}")
+    if "error" in data: raise Exception(f"SerpApi Error: {data['error']}")
         
     results = []
-    # Grab EVERYTHING Google returns to see what data is actually there
+    seen = set()
+    
     for item in data.get("organic_results", []):
-        title = item.get("title", "Unknown")
+        title = item.get("title", "")
         link = item.get("link", "")
-        
-        results.append({
-            "name": title,  # Passing raw title so we can see what it looks like in the DB
-            "website": "",
-            "linkedin": "",
-            "source": "Indeed",
-            "source_url": link
-        })
+        company = ""
+
+        # Only process official Company Hubs (/cmp/) to avoid spam job listings
+        if "/cmp/" in link:
+            # "Working at TechCorp: Employee Reviews" -> "TechCorp"
+            if "Working at " in title:
+                company = title.replace("Working at ", "").split(":")[0].strip()
+            # "TechCorp Careers and Employment" -> "TechCorp"
+            elif " Careers and Employment" in title:
+                company = title.split(" Careers and Employment")[0].strip()
+            else:
+                company = title.split(" - ")[0].split(" | ")[0].strip()
+
+        if company and len(company) < 45 and company.lower() not in seen and "Indeed" not in company:
+            seen.add(company.lower())
+            results.append({
+                "name": company,
+                "website": "",
+                "linkedin": "",
+                "source": "Indeed",
+                "source_url": link
+            })
             
     return results
