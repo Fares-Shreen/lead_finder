@@ -21,57 +21,34 @@ from search_engine import process
 import podio_live_checker
 import account_manager
 
+# =========================================================================
+# PAGE CONFIG & AIESEC BRANDING CSS
+# =========================================================================
 st.set_page_config(page_title="AIESEC Lead Engine", page_icon="👤", layout="wide")
 
-
-
-AIESEC_LOGO_URL = "./AIESEC-Human-Blue.png"
-
+AIESEC_LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/AIESEC_Logo.svg/512px-AIESEC_Logo.svg.png"
 AIESEC_BLUE = "#037ef3"
 
-
-
 aiesec_style = f"""
-
     <style>
-
     div[data-testid="stToolbar"] {{visibility: hidden;}}
-
     #MainMenu {{visibility: hidden;}}
-
     footer {{visibility: hidden;}}
 
-
-
     .stButton>button[kind="primary"] {{
-
-        background-color: {AIESEC_BLUE};
-
+        background-color: {AIESEC_BLUE}; 
         color: white;
-
         border: none;
-
     }}
-
     .stButton>button[kind="primary"]:hover {{
-
         background-color: #0266c8;
-
     }}
-
     h1, h2, h3 {{
-
         color: {AIESEC_BLUE} !important;
-
     }}
-
     </style>
-
 """
-
-st.markdown(aiesec_style, unsafe_allow_html=True) 
-
-
+st.markdown(aiesec_style, unsafe_allow_html=True)
 
 # =========================================================================
 # SESSION & AUTHENTICATION STATE
@@ -108,17 +85,7 @@ if not st.session_state.authenticated:
 if not st.session_state.authenticated:
     _, center_col, _ = st.columns([1, 1.2, 1])
     with center_col:
-        st.markdown(
-    f"""
-    <div style='text-align: center;'>
-        <img src='{AIESEC_LOGO_URL}' 
-             width='40' 
-             height='40'
-             style='border-radius: 50%; object-fit: cover;'>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
+        st.markdown(f"<div style='text-align: center;'><img src='{AIESEC_LOGO_URL}' width='180'></div>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center; margin-top: 10px;'>Sign In to Lead Engine</h2>", unsafe_allow_html=True)
         st.caption("<div style='text-align: center;'>AIESEC CRM & B2B Pipeline Access</div>", unsafe_allow_html=True)
         st.write("")
@@ -151,7 +118,7 @@ if not st.session_state.authenticated:
 # LOGGED-IN SIDEBAR
 # -------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'>"f"<img src='{AIESEC_LOGO_URL}' width='40' height='40' "f"style='border-radius: 50%; object-fit: cover;'>"f"</div>",unsafe_allow_html=True )
+    st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'><img src='{AIESEC_LOGO_URL}' width='140'></div>", unsafe_allow_html=True)
     st.markdown(f"**Account:** `{st.session_state.user_email}`")
     
     badge_color = AIESEC_BLUE if st.session_state.is_admin else "#00c16e"
