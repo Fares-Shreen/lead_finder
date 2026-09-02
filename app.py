@@ -8,7 +8,7 @@ import requests
 import pandas as pd
 import streamlit as st
 from streamlit import components
-from streamlit_cookies_controller import CookieController
+from streamlit_cookies_controller import CookieController  # <-- NEW IMPORT
 
 os.system("playwright install chromium")
 
@@ -24,25 +24,10 @@ import account_manager
 # =========================================================================
 # PAGE CONFIG & AIESEC BRANDING CSS
 # =========================================================================
-st.set_page_config(
-    page_title="AIESEC Lead Engine", 
-    page_icon="👤", 
-    layout="wide",
-    initial_sidebar_state="auto"  # Keeps it open on desktop, collapsible on mobile/smaller screens
-)
+st.set_page_config(page_title="AIESEC Lead Engine", page_icon="👤", layout="wide")
 
+AIESEC_LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/AIESEC_Logo.svg/512px-AIESEC_Logo.svg.png"
 AIESEC_BLUE = "#037ef3"
-
-# Safely load local image and convert to Base64 for HTML embedding & resizing
-def get_base64_image(image_path):
-    try:
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
-    except FileNotFoundError:
-        return ""
-
-logo_base64 = get_base64_image("AIESEC-Human-Blue.png")
-AIESEC_LOGO_URL = f"data:image/png;base64,{logo_base64}" if logo_base64 else "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/AIESEC_Logo.svg/512px-AIESEC_Logo.svg.png"
 
 aiesec_style = f"""
     <style>
@@ -51,18 +36,15 @@ aiesec_style = f"""
     footer {{visibility: hidden;}}
 
     .stButton>button[kind="primary"] {{
-        background-color: {AIESEC_BLUE} !important; 
-        color: white !important;
-        border: none !important;
+        background-color: {AIESEC_BLUE}; 
+        color: white;
+        border: none;
     }}
     .stButton>button[kind="primary"]:hover {{
-        background-color: #0266c8 !important;
+        background-color: #0266c8;
     }}
-    h1, h2, h3, a {{
+    h1, h2, h3 {{
         color: {AIESEC_BLUE} !important;
-    }}
-    .stTabs [data-baseweb="tab-highlight"] {{
-        background-color: {AIESEC_BLUE} !important;
     }}
     </style>
 """
@@ -71,6 +53,7 @@ st.markdown(aiesec_style, unsafe_allow_html=True)
 # =========================================================================
 # SESSION & AUTHENTICATION STATE
 # =========================================================================
+# Initialize cookie controller
 cookies = CookieController()
 
 if "authenticated" not in st.session_state: st.session_state.authenticated = False
@@ -102,7 +85,7 @@ if not st.session_state.authenticated:
 if not st.session_state.authenticated:
     _, center_col, _ = st.columns([1, 1.2, 1])
     with center_col:
-        st.markdown(f"<div style='text-align: center;'><img src='{AIESEC_LOGO_URL}' width='90'></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center;'><img src='{AIESEC_LOGO_URL}' width='180'></div>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center; margin-top: 10px;'>Sign In to Lead Engine</h2>", unsafe_allow_html=True)
         st.caption("<div style='text-align: center;'>AIESEC CRM & B2B Pipeline Access</div>", unsafe_allow_html=True)
         st.write("")
@@ -120,6 +103,7 @@ if not st.session_state.authenticated:
                     st.session_state.user_function = user_info["Function"]
                     st.session_state.is_admin = (user_info["Function"].upper() == "ADMIN")
                     
+                    # --- SAVE COOKIES FOR 30 DAYS ---
                     cookies.set("aiesec_email", user_info["Email"], max_age=30*24*60*60)
                     cookies.set("aiesec_func", user_info["Function"], max_age=30*24*60*60)
                     
@@ -131,10 +115,10 @@ if not st.session_state.authenticated:
     st.stop()
 
 # -------------------------------------------------------------------------
-# LOGGED-IN SIDEBAR (COLLAPSIBLE / TOGGLEABLE)
+# LOGGED-IN SIDEBAR
 # -------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'><img src='{AIESEC_LOGO_URL}' width='80'></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'><img src='{AIESEC_LOGO_URL}' width='140'></div>", unsafe_allow_html=True)
     st.markdown(f"**Account:** `{st.session_state.user_email}`")
     
     badge_color = AIESEC_BLUE if st.session_state.is_admin else "#00c16e"
@@ -142,13 +126,14 @@ with st.sidebar:
     
     st.divider()
     if st.button("🚪 Log Out", use_container_width=True):
+        # --- WIPE COOKIES ON LOGOUT ---
         cookies.remove("aiesec_email")
         cookies.remove("aiesec_func")
         
         for key in ["authenticated", "user_email", "user_function", "is_admin"]:
             st.session_state[key] = False if type(st.session_state[key]) == bool else ""
             
-        time.sleep(0.5)
+        time.sleep(0.5) # Give browser time to delete cookies
         st.rerun()
 
 st.title("AIESEC IGT Lead Engine")
@@ -227,6 +212,21 @@ def _execute_status_change(target_type, company_name, new_val, row_idx=None, she
         ws.clear()
         ws.update([df.columns.values.tolist()] + df.values.tolist())
 
+    if new_val == True: 
+        try:
+            with dedupe._conn() as c:
+                row = c.execute("SELECT * FROM companies WHERE name_normalized = ?", (dedupe._normalize(company_name),)).fetchone()
+            if row:
+                webhook_payload = {
+                    "company_name": row[1], "field": row[2], "location": row[3],
+                    "website": row[4], "linkedin": row[5], "emails": row[6], "phones": row[7]
+                }
+                webhook_url = "https://hooks.zapier.com/hooks/catch/your_id_here/"
+                try: requests.post(webhook_url, json=webhook_payload, timeout=2)
+                except requests.exceptions.RequestException: pass
+        except Exception as e:
+            print(f"Webhook failed: {e}")
+
 # --- 15-DAY RESET HELPER ---
 def apply_15_day_reset(df):
     if "Status" not in df.columns: df["Status"] = "Pending"
@@ -290,7 +290,7 @@ with tab_search:
     with col1:
         field_choices = st.multiselect(
             "Select Fields",
-            ["Software", "IT", "Digital Marketing", "Sales", "Video Editing", "Accounting", "English Center", "French Center", "English Academy", "French Academy", "Real Estate", "Construction", "Logistics", "Manufacturing", "Education", "Healthcare", "Tourism & Hospitality", "Food & Beverage", "Retail", "E-commerce", "Consulting", "Legal Services", "Financial Services", "Telecommunications", "Media & Entertainment", "Automotive", "Energy & Utilities", "Nonprofit & NGO", "Design Engineering"],
+            ["Software", "IT", "Digital Marketing", "Sales", "Video Editing", "Accounting", "English Center", "French Center","English Academy","French Academy"," Real Estate", "Construction", "Logistics", "Manufacturing", "Education", "Healthcare", "Tourism & Hospitality", "Food & Beverage", "Retail", "E-commerce", "Consulting", "Legal Services", "Financial Services", "Telecommunications", "Media & Entertainment", "Automotive", "Energy & Utilities", "Nonprofit & NGO","Design Engineering"],
             default=["Software"]
         )
     with col2:
@@ -340,6 +340,7 @@ with tab_search:
             st.session_state.auto_run_active = False
         else:
             if restart and not st.session_state.auto_run_active:
+                
                 for s in sources:
                     for f in fields_to_search:
                         dedupe.reset_search_offset(s, f, location)
@@ -426,7 +427,7 @@ with tab_manual:
                 st.rerun()
 
 # =========================================================================
-# TAB 3: UPLOAD CUSTOM LIST
+# TAB 3: UPLOAD CUSTOM LIST (UPDATED FOR AUTO-RUN)
 # =========================================================================
 with tab_upload:
     st.markdown("### 📁 Upload Custom Excel / CSV")
@@ -551,6 +552,7 @@ with tab_upload:
                 st.success("🎉 All companies in this file have been checked! You can download the finalized file below.")
             
             st.divider()
+            
             csv_data = st.session_state.upload_df.to_csv(index=False).encode('utf-8')
             
             if st.session_state.get("trigger_download") or (pending_count == 0 and "downloaded" not in st.session_state):
@@ -580,7 +582,7 @@ with tab_upload:
             st.session_state.auto_run = False 
 
 # =========================================================================
-# TAB 4: TEAM ACTION HUB
+# TAB 4: TEAM ACTION Hub (ROW-SELECTION CHECKBOXES)
 # =========================================================================
 with tab_action_hub:
     st.markdown("### Team Action Hub (Google Sheets)")
@@ -609,6 +611,7 @@ with tab_action_hub:
                         ws.update([df.columns.values.tolist()] + df.values.tolist())
 
                     df_display = apply_lead_scoring(df)
+                    
                     df_display.reset_index(drop=True, inplace=True)
                     df_display.insert(0, "No.", df_display.index + 1)
 
@@ -651,7 +654,7 @@ with tab_action_hub:
         st.warning("⚠️ Google Sheets credentials are not configured in Streamlit Secrets.")
 
 # =========================================================================
-# TAB 5: LOCAL DATABASE
+# TAB 5: LOCAL DATABASE (ISOLATED BY USER RESEARCHER & FUNCTION)
 # =========================================================================
 with tab_database:
     dedupe.init_db()
@@ -849,7 +852,7 @@ if st.session_state.is_admin:
                 pnd = tot - chk
 
                 c1, c2, c3 = st.columns(3)
-                c1.metric("Total Leads", tot)
+                c1.metric(f"Total Leads", tot)
                 c2.metric("Checked Leads", chk)
                 c3.metric("Pending Leads", pnd)
 
