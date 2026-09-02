@@ -1,45 +1,43 @@
 import requests
+from bs4 import BeautifulSoup
 
 def search_linkedin_companies(field, location, num_results, start=0, api_key=None):
-    if not api_key: return []
+    # Use DuckDuckGo HTML for a CAPTCHA-free web search
+    url = "https://html.duckduckgo.com/html/"
+    search_query = f'site:eg.linkedin.com/company "{field}" "{location}"'
     
-    # Enforce the "eg." subdomain to strictly pull Egyptian companies
-    query = f'site:eg.linkedin.com/company "{field}" "{location}"'
-    
-    params = {
-        "engine": "google", 
-        "q": query, 
-        "api_key": api_key, 
-        "num": num_results, 
-        "start": start 
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    data = {'q': search_query, 's': start} # 's' handles DDG pagination
     
     try:
-        res = requests.get("https://serpapi.com/search", params=params)
-        data = res.json()
+        res = requests.post(url, headers=headers, data=data, timeout=10)
+        soup = BeautifulSoup(res.text, 'html.parser')
         results = []
         
-        for item in data.get("organic_results", []):
-            title = item.get("title", "")
-            link = item.get("link", "")
-            
-            # Secondary safeguard: skip any URL that is not an Egyptian or generic LinkedIn company page
-            if not ("eg.linkedin.com" in link or "www.linkedin.com" in link):
-                continue
+        for a in soup.find_all("a", class_="result__url"):
+            link = a.get("href", "")
+            if "linkedin.com/company" in link:
+                # Extract title from the parent body
+                body = a.find_parent("div", class_="result__body")
+                title_tag = body.find("h2", class_="result__title") if body else None
                 
-            # Clean up the company name
-            company = title.split(" | ")[0].split(" - ")[0].strip()
-            
-            if company and "LinkedIn" not in company:
-                results.append({
-                    "name": company,
-                    "website": "",
-                    "linkedin": link,
-                    "source": "LinkedIn",
-                    "source_url": link
-                })
-                
+                if title_tag:
+                    title = title_tag.text.strip()
+                    company = title.split("|")[0].split("-")[0].strip()
+                    
+                    if company and "LinkedIn" not in company:
+                        results.append({
+                            "name": company,
+                            "website": "",
+                            "linkedin": link,
+                            "source": "LinkedIn",
+                            "source_url": link
+                        })
+                        
+                        if len(results) >= num_results:
+                            break
+                            
         return results
     except Exception as e:
-        print(f"LinkedIn Scraper Error: {e}")
+        print(f"LinkedIn Free DDG Error: {e}")
         return []

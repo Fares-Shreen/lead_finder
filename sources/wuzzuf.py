@@ -1,56 +1,41 @@
 import requests
+from bs4 import BeautifulSoup
+from urllib.parse import quote
 
 def search_wuzzuf(field, location, num_results, start=0, api_key=None):
-    if not api_key: return []
+    # Wuzzuf pagination is 0-indexed (start // 10 roughly maps to pages)
+    page = start // 10 
+    query = quote(f"{field} {location}")
+    url = f"https://wuzzuf.net/search/jobs/?q={query}&start={page}"
     
-    # site:wuzzuf.net/jobs/p targets specific job posting pages
-    query = f'site:wuzzuf.net/jobs/p "{field}" "{location}"'
-    
-    params = {
-        "engine": "google",
-        "q": query,
-        "api_key": api_key,
-        "num": num_results,
-        "start": start,
-        "tbs": "qdr:m24" # Within last 24 months to ensure they are active
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
     
     try:
-        res = requests.get("https://serpapi.com/search", params=params)
-        data = res.json()
+        res = requests.get(url, headers=headers, timeout=10)
+        soup = BeautifulSoup(res.text, 'html.parser')
         results = []
+        seen = set()
         
-        loc_lower = location.split(",")[0].lower().strip() # "alexandria"
-        
-        for item in data.get("organic_results", []):
-            title = item.get("title", "")
-            title_clean = title.replace(" - Wuzzuf", "").replace(" | WUZZUF", "")
-            
-            # Enforce strict location check on the title itself (drops Dubai/Cairo results)
-            if loc_lower not in title_clean.lower():
-                continue
-            
-            # Wuzzuf pattern is usually: Job Title - Company Name - Location
-            parts = title_clean.split(" - ")
-            
-            company = ""
-            if len(parts) >= 3:
-                # The company is usually the second-to-last item before the location
-                company = parts[-2].strip()
-            elif len(parts) == 2:
-                company = parts[-1].strip()
+        # Wuzzuf companies are linked to /jobs/careers/
+        for a in soup.find_all("a", href=True):
+            if "/jobs/careers/" in a["href"]:
+                # Clean up the name
+                comp_name = a.text.replace(" -", "").strip()
                 
-            # Filter out messy extractions and long job descriptions
-            if company and len(company) < 40 and "job at" not in company.lower():
-                results.append({
-                    "name": company,
-                    "website": "",
-                    "linkedin": "",
-                    "source": "Wuzzuf",
-                    "source_url": item.get("link", "")
-                })
-                
+                if comp_name and comp_name not in seen and len(comp_name) < 40 and "job at" not in comp_name.lower():
+                    seen.add(comp_name)
+                    results.append({
+                        "name": comp_name,
+                        "website": "",
+                        "linkedin": "",
+                        "source": "Wuzzuf",
+                        "source_url": "https://wuzzuf.net" + a["href"]
+                    })
+                    
+                    if len(results) >= num_results:
+                        break
+                        
         return results
     except Exception as e:
-        print(f"Wuzzuf Scraper Error: {e}")
+        print(f"Wuzzuf Free Scraper Error: {e}")
         return []

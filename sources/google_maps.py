@@ -1,41 +1,49 @@
 import requests
+from bs4 import BeautifulSoup
 
 def search_google_maps(field, location, num_results, start=0, api_key=None):
-    if not api_key: return []
+    # Free general local search equivalent
+    url = "https://html.duckduckgo.com/html/"
+    search_query = f'"{field}" companies in "{location}"'
     
-    # Example query: "Software in Alexandria, Egypt"
-    query = f"{field} in {location}"
-    params = {
-        "engine": "google_maps",
-        "q": query,
-        "api_key": api_key,
-        "start": start
-    }
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    data = {'q': search_query, 's': start}
     
     try:
-        res = requests.get("https://serpapi.com/search", params=params)
-        data = res.json()
+        res = requests.post(url, headers=headers, data=data, timeout=10)
+        soup = BeautifulSoup(res.text, 'html.parser')
         results = []
+        seen = set()
         
-        # Google Maps results are found in 'local_results'
-        for item in data.get("local_results", []):
-            company = item.get("title", "")
-            if company:
-                phone = item.get("phone", "")
+        for item in soup.find_all("div", class_="result__body"):
+            title_tag = item.find("h2", class_="result__title")
+            a_tag = item.find("a", class_="result__url")
+            
+            if not title_tag or not a_tag: 
+                continue
+                
+            title = title_tag.text.strip()
+            link = a_tag.get("href", "")
+            
+            # Clean up SEO title tags to extract the core company name
+            company = title.split("|")[0].split("-")[0].split(":")[0].strip()
+            
+            if company and len(company) < 50 and company not in seen:
+                seen.add(company)
                 results.append({
                     "name": company,
-                    "website": item.get("website", ""),
+                    "website": link,
                     "linkedin": "",
                     "emails": [],
-                    "phones": [phone] if phone else [],
-                    "source": "Google Maps",
-                    "source_url": item.get("gps_coordinates", {}).get("google_maps_url", "") or item.get("place_id", "")
+                    "phones": [],
+                    "source": "Web Search (Free)",
+                    "source_url": link
                 })
                 
-                if len(results) >= num_results:
+                if len(results) >= num_results: 
                     break
                     
         return results
     except Exception as e:
-        print(f"Google Maps Scraper Error: {e}")
+        print(f"Web Free Scraper Error: {e}")
         return []

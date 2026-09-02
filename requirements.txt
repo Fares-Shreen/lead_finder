@@ -9,3 +9,4 @@ playwright>=1.40
 gspread
 google-auth
 dnspython
+beautifulsoup4
