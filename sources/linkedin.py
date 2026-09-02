@@ -3,38 +3,32 @@ import requests
 def search_linkedin_companies(field, location, num_results, start=0, api_key=None):
     if not api_key: raise Exception("No SerpApi key provided.")
     
-    query = f'site:eg.linkedin.com/company {field} {location}'
+    # Forces exact match on "Alexandria, Egypt"
+    query = f'{field} "{location}" site:linkedin.com/company'
+    
     params = {
         "engine": "google", 
         "q": query, 
         "api_key": api_key, 
-        "num": num_results, 
+        "num": min(num_results, 20), 
         "start": start 
     }
     
-    res = requests.get("https://serpapi.com/search", params=params, timeout=10)
+    res = requests.get("https://serpapi.com/search", params=params, timeout=15)
     data = res.json()
-    
-    if "error" in data:
-        raise Exception(f"SerpApi Error: {data['error']}")
+    if "error" in data: raise Exception(f"SerpApi Error: {data['error']}")
         
     results = []
     for item in data.get("organic_results", []):
-        title = item.get("title", "")
+        title = item.get("title", "Unknown")
         link = item.get("link", "")
+        company = title.split("|")[0].split("-")[0].replace("LinkedIn", "").strip()
         
-        if not ("eg.linkedin.com" in link or "www.linkedin.com" in link):
-            continue
-            
-        company = title.split(" | ")[0].split(" - ")[0].strip()
-        
-        if company and "LinkedIn" not in company:
-            results.append({
-                "name": company,
-                "website": "",
-                "linkedin": link,
-                "source": "LinkedIn",
-                "source_url": link
-            })
-            
+        results.append({
+            "name": company if company else title,
+            "website": "",
+            "linkedin": link,
+            "source": "LinkedIn",
+            "source_url": link
+        })
     return results
