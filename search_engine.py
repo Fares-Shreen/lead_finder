@@ -21,7 +21,6 @@ SOURCE_FUNCS = {
 OFFSET_STEP = { "Google Maps": 5, "LinkedIn": 10, "Yellow Pages": 10, "Wuzzuf": 10, "Indeed": 10 }
 
 def podio_api_precheck(company_name: str) -> bool:
-    """Returns True if the API finds data (Suspect), False if empty (Brand New)."""
     if not company_name: return False
     query = quote(company_name.strip())
     url = f"https://podio.com/webforms/25879454/1936053/items_search?field_id=238040132&query={query}&limit=50"
@@ -51,7 +50,6 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
         except Exception as e:
             return source_name, [], str(e)
 
-    # Concurrency is safe and fast with SerpApi
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as executor:
         futures = [executor.submit(fetch_source, s) for s in sources]
         for future in concurrent.futures.as_completed(futures):
@@ -59,10 +57,10 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
             if error:
                 if progress_cb: progress_cb(f"❌ Error in {source_name}: {error}")
             else:
+                if progress_cb: progress_cb(f"✅ {source_name}: Found {len(results)} raw leads.")
                 for r in results:
                     r["field"] = field
                     r["location"] = location
-                    # Stamp the lead with the active function role AND the researcher's email
                     r["function_type"] = function_type
                     r["created_by"] = created_by
                     raw_candidates.append(r)
@@ -86,7 +84,6 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
         if domain: seen_domains.add(domain)
         filtered_candidates.append(lead)
 
-    # ENRICH EVERYTHING UPFRONT BEFORE PODIO CHECK
     if progress_cb: progress_cb(f"✨ Deeply enriching {len(filtered_candidates)} candidates upfront...")
     
     fully_enriched_candidates = []
@@ -108,7 +105,6 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
         lead["phones"] = list(enriched_phones)
         fully_enriched_candidates.append(lead)
 
-    # API SPEED CHECK
     if progress_cb: progress_cb(f"🚀 Running Webform API Speed Check on {len(fully_enriched_candidates)} leads...")
     
     definitely_new = []
@@ -120,7 +116,6 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
         else:
             definitely_new.append(lead)
 
-    # SAVE RESULTS
     if progress_cb: progress_cb(f"✅ Safe: {len(definitely_new)} | 🕵️ Suspects: {len(suspects_for_later)}")
 
     for lead in definitely_new:
