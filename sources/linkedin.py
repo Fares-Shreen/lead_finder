@@ -1,33 +1,41 @@
 import requests
 from bs4 import BeautifulSoup
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Content-Type": "application/x-www-form-urlencoded"
+}
+
 def search_linkedin_companies(field, location, num_results, start=0, api_key=None):
-    # Use DuckDuckGo HTML for a CAPTCHA-free web search
     url = "https://html.duckduckgo.com/html/"
-    search_query = f'site:eg.linkedin.com/company "{field}" "{location}"'
-    
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    data = {'q': search_query, 's': start} # 's' handles DDG pagination
+    query = f'site:eg.linkedin.com/company "{field}" "{location}"'
+    data = {"q": query, "s": start}
     
     try:
-        res = requests.post(url, headers=headers, data=data, timeout=10)
-        soup = BeautifulSoup(res.text, 'html.parser')
+        res = requests.post(url, data=data, headers=HEADERS, timeout=12)
+        if res.status_code != 200:
+            return []
+            
+        soup = BeautifulSoup(res.text, "html.parser")
         results = []
+        seen = set()
         
-        for a in soup.find_all("a", class_="result__url"):
-            link = a.get("href", "")
+        for link_tag in soup.find_all("a", class_="result__url"):
+            link = link_tag.get("href", "")
             if "linkedin.com/company" in link:
-                # Extract title from the parent body
-                body = a.find_parent("div", class_="result__body")
-                title_tag = body.find("h2", class_="result__title") if body else None
+                container = link_tag.find_parent("div", class_="result__body")
+                title_tag = container.find("h2", class_="result__title") if container else None
                 
                 if title_tag:
-                    title = title_tag.text.strip()
-                    company = title.split("|")[0].split("-")[0].strip()
+                    raw_title = title_tag.get_text(strip=True)
+                    # Extract pure company name from format "Company Name | LinkedIn"
+                    name = raw_title.split("|")[0].split("-")[0].replace("LinkedIn", "").strip()
+                    name_lower = name.lower()
                     
-                    if company and "LinkedIn" not in company:
+                    if name and len(name) < 50 and name_lower not in seen:
+                        seen.add(name_lower)
                         results.append({
-                            "name": company,
+                            "name": name,
                             "website": "",
                             "linkedin": link,
                             "source": "LinkedIn",
@@ -39,5 +47,5 @@ def search_linkedin_companies(field, location, num_results, start=0, api_key=Non
                             
         return results
     except Exception as e:
-        print(f"LinkedIn Free DDG Error: {e}")
+        print(f"LinkedIn Free Scraper Error: {e}")
         return []
