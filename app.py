@@ -728,30 +728,39 @@ with tab_database:
                 
                 st.info(f"Selected **{len(selected_companies)}** company(s): {', '.join(selected_companies[:3])}{'...' if len(selected_companies) > 3 else ''}")
                 
-                # Split into 3 columns for the two actions
-                col_act1, col_act2, col_act3 = st.columns([1, 1, 1])
-                
-                # ACTION 1: Mark as Checked
-                with col_act1:
-                    if st.button(f"✅ Mark as Checked ({len(selected_companies)})", type="primary", use_container_width=True):
-                        for comp in selected_companies:
-                            dedupe.update_company_status(comp, True)
-                        st.success(f"Updated {len(selected_companies)} companies to Checked!")
-                        time.sleep(0.8)
-                        st.rerun()
-                
-                # ACTION 2: Reassign to another email
-                with col_act2:
-                    # Load all active emails from the account manager
-                    active_users = account_manager.load_accounts()["Email"].tolist()
-                    target_email = st.selectbox("Assign to:", active_users, label_visibility="collapsed")
+                # --- ADMIN VIEW: Can Check AND Reassign ---
+                if st.session_state.is_admin:
+                    col_act1, col_act2, col_act3 = st.columns([1, 1, 1])
                     
-                with col_act3:
-                    if st.button(f"🔄 Reassign Leads", use_container_width=True):
-                        if target_email:
+                    with col_act1:
+                        if st.button(f"✅ Mark as Checked ({len(selected_companies)})", type="primary", use_container_width=True):
                             for comp in selected_companies:
-                                dedupe.reassign_company(comp, target_email)
-                            st.success(f"Reassigned {len(selected_companies)} leads to {target_email}!")
+                                dedupe.update_company_status(comp, True)
+                            st.success(f"Updated {len(selected_companies)} companies to Checked!")
+                            time.sleep(0.8)
+                            st.rerun()
+                            
+                    with col_act2:
+                        active_users = account_manager.load_accounts()["Email"].tolist()
+                        target_email = st.selectbox("Assign to:", active_users, label_visibility="collapsed")
+                        
+                    with col_act3:
+                        if st.button(f"🔄 Reassign Leads", use_container_width=True):
+                            if target_email:
+                                for comp in selected_companies:
+                                    dedupe.reassign_company(comp, target_email)
+                                st.success(f"Reassigned {len(selected_companies)} leads to {target_email}!")
+                                time.sleep(0.8)
+                                st.rerun()
+                
+                # --- REGULAR USER VIEW: Can ONLY Check ---
+                else:
+                    col_act1, col_act2 = st.columns([2, 1])
+                    with col_act1:
+                        if st.button(f"✅ Mark Selected as Checked ({len(selected_companies)})", type="primary", use_container_width=True):
+                            for comp in selected_companies:
+                                dedupe.update_company_status(comp, True)
+                            st.success(f"Updated {len(selected_companies)} companies to Checked!")
                             time.sleep(0.8)
                             st.rerun()
     else:
