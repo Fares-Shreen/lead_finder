@@ -28,7 +28,7 @@ st.set_page_config(
     page_title="AIESEC Lead Engine", 
     page_icon="👤", 
     layout="wide",
-    initial_sidebar_state="collapsed"  # Allows sidebar to open/close cleanly
+    initial_sidebar_state="auto"  # Keeps it open on desktop, collapsible on mobile/smaller screens
 )
 
 AIESEC_BLUE = "#037ef3"
