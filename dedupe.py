@@ -4,12 +4,11 @@ and syncs to Google Sheets on boot, completion, and status updates.
 """
 import hashlib
 import sqlite3
-import pandas as pd
-import streamlit as st
 from contextlib import contextmanager
 from datetime import datetime
-from config import DB_PATH
 import pandas as pd
+import streamlit as st
+from config import DB_PATH
 import podio_live_checker
 
 _CLOUD_SYNC_DONE = False
@@ -52,16 +51,27 @@ def init_db():
                 emails TEXT,
                 phones TEXT,
                 source TEXT,
+                source_url TEXT,
                 confirmed INTEGER DEFAULT 0,
                 checked_date TEXT,
                 found_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 podio_matched_title TEXT,
                 podio_link TEXT,
-                source_url TEXT
+                function_type TEXT DEFAULT 'IGT',
+                created_by TEXT DEFAULT ''
             )
         """)
+        # Safe migrations for existing SQLite databases
         try:
             c.execute("ALTER TABLE companies ADD COLUMN checked_date TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute("ALTER TABLE companies ADD COLUMN function_type TEXT DEFAULT 'IGT'")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            c.execute("ALTER TABLE companies ADD COLUMN created_by TEXT DEFAULT ''")
         except sqlite3.OperationalError:
             pass
 
@@ -90,33 +100,6 @@ def init_db():
         _pull_from_google_sheets()
         _CLOUD_SYNC_DONE = True
 
-def init_db():
-    with _conn() as c:
-        c.execute("""
-            CREATE TABLE IF NOT EXISTS companies (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT,
-                field TEXT,
-                location TEXT,
-                website TEXT,
-                linkedin TEXT,
-                emails TEXT,
-                phones TEXT,
-                source TEXT,
-                source_url TEXT,
-                confirmed INTEGER DEFAULT 0,
-                checked_date TEXT,
-                found_at TEXT,
-                name_normalized TEXT UNIQUE,
-                function_type TEXT DEFAULT 'IGT'
-            )
-        """)
-        # Safe migration for existing tables without the column
-        try:
-            c.execute("ALTER TABLE companies ADD COLUMN function_type TEXT DEFAULT 'IGT'")
-        except Exception:
-            pass  # Column already exists        
-
 def _pull_from_google_sheets():
     client = _get_gspread_client()
     if not client or "sheet" not in st.secrets:
@@ -129,8 +112,8 @@ def _pull_from_google_sheets():
                 for r in records:
                     c.execute("""
                         INSERT OR IGNORE INTO companies 
-                        (name_normalized, name, field, location, website, linkedin, emails, phones, source, confirmed, checked_date, found_at, podio_matched_title, podio_link, source_url)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (name_normalized, name, field, location, website, linkedin, emails, phones, source, confirmed, checked_date, found_at, podio_matched_title, podio_link, source_url, function_type, created_by)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         r.get("name_normalized", ""), r.get("name", ""), r.get("field", ""), 
                         r.get("location", ""), r.get("website", ""), r.get("linkedin", ""), 
@@ -138,7 +121,8 @@ def _pull_from_google_sheets():
                         int(r.get("confirmed", 0) if str(r.get("confirmed")).isdigit() else 0),
                         r.get("checked_date", ""),
                         r.get("found_at", ""), r.get("podio_matched_title", ""), 
-                        r.get("podio_link", ""), r.get("source_url", "")
+                        r.get("podio_link", ""), r.get("source_url", ""),
+                        r.get("function_type", "IGT"), r.get("created_by", "")
                     ))
             except Exception:
                 pass
@@ -231,11 +215,22 @@ def add_company(record: dict):
     with _conn() as c:
         c.execute(
             """INSERT OR IGNORE INTO companies
-               (name_normalized, name, field, location, website, linkedin, emails, phones, source, source_url, confirmed, checked_date)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '')""",
-            (_normalize(record["name"]), record.get("name", ""), record.get("field", ""), record.get("location", ""), 
-             record.get("website", ""), record.get("linkedin", ""), ", ".join(record.get("emails", []) or []), 
-             ", ".join(record.get("phones", []) or []), record.get("source", ""), record.get("source_url", "")),
+               (name_normalized, name, field, location, website, linkedin, emails, phones, source, source_url, confirmed, checked_date, function_type, created_by)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)""",
+            (
+                _normalize(record["name"]),
+                record.get("name", ""),
+                record.get("field", ""),
+                record.get("location", ""),
+                record.get("website", ""),
+                record.get("linkedin", ""),
+                ", ".join(record.get("emails", []) or []) if isinstance(record.get("emails"), list) else str(record.get("emails", "") or ""),
+                ", ".join(record.get("phones", []) or []) if isinstance(record.get("phones"), list) else str(record.get("phones", "") or ""),
+                record.get("source", ""),
+                record.get("source_url", ""),
+                record.get("function_type", "IGT"),
+                record.get("created_by", "")
+            ),
         )
 
 def save_podio_duplicate(name: str, matched_title: str, link: str):
@@ -250,15 +245,14 @@ def save_podio_duplicate(name: str, matched_title: str, link: str):
         )
 
 def all_companies(include_confirmed: bool = False):
-    cols = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "confirmed", "checked_date", "found_at"]
+    cols = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "confirmed", "checked_date", "found_at", "function_type", "created_by"]
     where = "" if include_confirmed else "WHERE confirmed = 0 OR confirmed IS NULL"
     with _conn() as c:
         rows = c.execute(f"SELECT {', '.join(cols)} FROM companies {where} ORDER BY found_at DESC").fetchall()
         return [dict(zip(cols, r)) for r in rows]
 
 def confirmed_companies():
-    """Returns only checked/used companies."""
-    cols = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "confirmed", "checked_date", "found_at", "podio_matched_title", "podio_link"]
+    cols = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "confirmed", "checked_date", "found_at", "podio_matched_title", "podio_link", "function_type", "created_by"]
     with _conn() as c:
         rows = c.execute(
             f"SELECT {', '.join(cols)} FROM companies WHERE confirmed = 1 ORDER BY checked_date DESC, found_at DESC"
@@ -289,24 +283,19 @@ def log_search(field: str, location: str, sources: list, num_per_source: int, ap
         )
 
 def get_stats():
-    """Calculates metrics Per Day (Today), Per Week (7 Days), and Overall."""
     with _conn() as c:
-        # Searches
         searches_total = c.execute("SELECT COUNT(*) FROM search_log").fetchone()[0]
         searches_today = c.execute("SELECT COUNT(*) FROM search_log WHERE date(searched_at) = date('now')").fetchone()[0]
         searches_week = c.execute("SELECT COUNT(*) FROM search_log WHERE date(searched_at) >= date('now', '-7 days')").fetchone()[0]
         
-        # Companies
         companies_total = c.execute("SELECT COUNT(*) FROM companies").fetchone()[0]
         companies_today = c.execute("SELECT COUNT(*) FROM companies WHERE date(found_at) = date('now')").fetchone()[0]
         companies_week = c.execute("SELECT COUNT(*) FROM companies WHERE date(found_at) >= date('now', '-7 days')").fetchone()[0]
 
-        # Checked / Confirmed
         checked_total = c.execute("SELECT COUNT(*) FROM companies WHERE confirmed = 1").fetchone()[0]
         checked_today = c.execute("SELECT COUNT(*) FROM companies WHERE confirmed = 1 AND date(checked_date) = date('now')").fetchone()[0]
         checked_week = c.execute("SELECT COUNT(*) FROM companies WHERE confirmed = 1 AND date(checked_date) >= date('now', '-7 days')").fetchone()[0]
 
-        # Distinct Users
         users_total = c.execute("SELECT COUNT(DISTINCT user_key_hash) FROM search_log").fetchone()[0]
         users_today = c.execute("SELECT COUNT(DISTINCT user_key_hash) FROM search_log WHERE date(searched_at) = date('now')").fetchone()[0]
         users_week = c.execute("SELECT COUNT(DISTINCT user_key_hash) FROM search_log WHERE date(searched_at) >= date('now', '-7 days')").fetchone()[0]
@@ -332,11 +321,9 @@ def clear_all_data():
     sync_to_google_sheets()
 
 def add_suspects_to_sheet(suspect_list):
-    """Saves API-flagged suspect companies to the Need_podio_check tab."""
     podio_live_checker._sync_to_google_sheet(suspect_list, "Need_podio_check")
 
 def get_suspects_from_sheet():
-    """Retrieves pending suspects for manual Playwright checking."""
     client = podio_live_checker._get_gspread_client()
     if not client or "sheet" not in st.secrets: return []
     try:
@@ -347,24 +334,15 @@ def get_suspects_from_sheet():
         return []
 
 def is_suspect(company_name):
-    """Prevents re-scraping companies already in the suspect queue."""
     suspects = get_suspects_from_sheet()
-    
-    # Safely convert the incoming search name to a string
     name_normalized = _normalize(str(company_name or ""))
-    
     for s in suspects:
-        # Force the Google Sheets value to be a string before normalizing.
-        # This prevents crashes if the sheet has empty rows or numeric names.
         raw_name = str(s.get("name", "") or "")
-        
         if _normalize(raw_name) == name_normalized:
             return True
-            
     return False
 
 def remove_suspects_from_sheet(names_to_remove):
-    """Removes processed leads from the queue."""
     client = podio_live_checker._get_gspread_client()
     if not client: return
     try:
@@ -376,4 +354,4 @@ def remove_suspects_from_sheet(names_to_remove):
             worksheet.clear()
             worksheet.update([df.columns.values.tolist()] + df.values.tolist())
     except Exception as e:
-        print(f"Error removing suspects: {e}")    
+        print(f"Error removing suspects: {e}")

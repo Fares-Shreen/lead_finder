@@ -38,7 +38,7 @@ def podio_api_precheck(company_name: str) -> bool:
     except Exception:
         return True 
 
-def process(field, location, sources, num_per_source, progress_cb=None, api_key=None, podio_email=None, podio_password=None):
+def process(field, location, sources, num_per_source, progress_cb=None, api_key=None, podio_email=None, podio_password=None, function_type="IGT", created_by=""):
     raw_candidates = []
     
     if progress_cb: progress_cb("📥 Launching scrapers simultaneously...")
@@ -61,6 +61,9 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
                 for r in results:
                     r["field"] = field
                     r["location"] = location
+                    # Stamp the lead with the active function role AND the researcher's email
+                    r["function_type"] = function_type
+                    r["created_by"] = created_by
                     raw_candidates.append(r)
 
     filtered_candidates = []

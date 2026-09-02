@@ -18,7 +18,7 @@ import dedupe
 import config
 from search_engine import process
 import podio_live_checker
-import account_manager  # Make sure account_manager.py is in the same directory
+import account_manager
 
 # =========================================================================
 # PAGE CONFIG & AIESEC BRANDING CSS
@@ -30,12 +30,10 @@ AIESEC_BLUE = "#037ef3"
 
 aiesec_style = f"""
     <style>
-    /* Hide Streamlit components */
     div[data-testid="stToolbar"] {{visibility: hidden;}}
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
 
-    /* AIESEC Branding Overrides */
     .stButton>button[kind="primary"] {{
         background-color: {AIESEC_BLUE}; 
         color: white;
@@ -66,7 +64,7 @@ if "auto_run_active" not in st.session_state: st.session_state.auto_run_active =
 if "auto_run_cycle" not in st.session_state: st.session_state.auto_run_cycle = 0
 
 # -------------------------------------------------------------------------
-# LOGIN GATE (WITH AIESEC LOGO)
+# LOGIN GATE
 # -------------------------------------------------------------------------
 if not st.session_state.authenticated:
     _, center_col, _ = st.columns([1, 1.2, 1])
@@ -93,7 +91,7 @@ if not st.session_state.authenticated:
                     st.rerun()
                 else:
                     st.error("Invalid email or password.")
-    st.stop()  # Halt rendering until signed in
+    st.stop()
 
 # -------------------------------------------------------------------------
 # LOGGED-IN SIDEBAR
@@ -102,7 +100,6 @@ with st.sidebar:
     st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'><img src='{AIESEC_LOGO_URL}' width='140'></div>", unsafe_allow_html=True)
     st.markdown(f"**Account:** `{st.session_state.user_email}`")
     
-    # Brand matching badges
     badge_color = AIESEC_BLUE if st.session_state.is_admin else "#00c16e"
     st.markdown(f"**Function:** <span style='background-color:{badge_color}; color:white; padding:3px 8px; border-radius:4px; font-weight:bold;'>{st.session_state.user_function}</span>", unsafe_allow_html=True)
     
@@ -233,7 +230,7 @@ def highlight_green(row):
         return ["background-color: #d4edda; color: #155724; font-weight: 500;"] * len(row)
     return [""] * len(row)
 
-# Dynamic Tab Loading based on permissions
+# Dynamic Tab Loading
 tab_titles = [
     "🔎 Run Search", 
     "🕵️ Manual Deep Check", 
@@ -255,12 +252,11 @@ if st.session_state.is_admin:
 with tab_search:
     st.markdown("### 🔎 Market Research & Discovery")
     
-    # --- FUNCTION TAGGING ---
     if st.session_state.is_admin:
         assigned_function = st.selectbox("Assign Discovered Leads To:", ["IGT", "IGV", "B2B"])
     else:
         assigned_function = st.session_state.user_function
-        st.info(f"Leads discovered in this search will be automatically tagged for **{assigned_function}**.")
+        st.info(f"Leads discovered in this search will be tagged for **{assigned_function}** by **{st.session_state.user_email}**.")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -326,7 +322,7 @@ with tab_search:
 
             st.session_state.auto_run_cycle += 1
             if st.session_state.auto_run_active:
-                st.info(f"🔄 **Auto-Run Active — Cycle #{st.session_state.auto_run_cycle}** (Offsets automatically advancing)")
+                st.info(f"🔄 **Auto-Run Active — Cycle #{st.session_state.auto_run_cycle}** (Offsets advancing)")
 
             total_clean, total_suspects = 0, 0
             for current_field in fields_to_search:
@@ -336,7 +332,8 @@ with tab_search:
                         api_key=st.session_state.serpapi_key or None,
                         podio_email=st.session_state.podio_email,
                         podio_password=st.session_state.podio_password,
-                        function_type=assigned_function
+                        function_type=assigned_function,
+                        created_by=st.session_state.user_email
                     )
                     total_clean += len(clean_leads)
                     total_suspects += len(suspect_leads)
@@ -392,6 +389,7 @@ with tab_manual:
             
             for lead in cleared:
                 lead["function_type"] = manual_assigned_function
+                lead["created_by"] = st.session_state.user_email
                 dedupe.add_company(lead)
             dedupe.sync_to_google_sheets()
             
@@ -504,6 +502,7 @@ with tab_upload:
                             for lead in cleared:
                                 lead.pop("_upload_idx", None)
                                 lead["function_type"] = upload_assigned_function 
+                                lead["created_by"] = st.session_state.user_email
                                 dedupe.add_company(lead)
                             dedupe.sync_to_google_sheets()
                             
@@ -623,7 +622,7 @@ with tab_action_hub:
         st.warning("⚠️ Google Sheets credentials are not configured in Streamlit Secrets.")
 
 # =========================================================================
-# TAB 5: LOCAL DATABASE (ROLE-ISOLATED)
+# TAB 5: LOCAL DATABASE (ISOLATED BY USER RESEARCHER & FUNCTION)
 # =========================================================================
 with tab_database:
     dedupe.init_db()
@@ -633,28 +632,33 @@ with tab_database:
         df_local = pd.DataFrame(existing)
         
         if "function_type" not in df_local.columns:
-            df_local["function_type"] = "IGT" # Fallback if missing
+            df_local["function_type"] = "IGT"
+        if "created_by" not in df_local.columns:
+            df_local["created_by"] = ""
             
         if "source" in df_local.columns:
             df_local = df_local[df_local["source"] != "Manual Upload"]
         elif "Source" in df_local.columns:
             df_local = df_local[df_local["Source"] != "Manual Upload"]
 
-        # ROLE-BASED ISOLATION: Hide companies belonging to other functions
+        # USER DATA ISOLATION: Non-admins strictly see only accounts they personally researched
         if not st.session_state.is_admin:
-            df_local = df_local[df_local["function_type"] == st.session_state.user_function]
+            df_local = df_local[
+                (df_local["function_type"] == st.session_state.user_function) & 
+                (df_local["created_by"].str.strip().str.lower() == st.session_state.user_email.strip().lower())
+            ]
 
         display_count = len(df_local)
 
         if st.session_state.is_admin:
             st.markdown(f"### 📋 Local Master Database - ADMIN VIEW ({display_count} companies)")
-            st.caption("Admin mode: Viewing ALL companies including Checked ones.")
+            st.caption("Admin mode: Viewing ALL accounts across all researchers and departments.")
         else:
-            st.markdown(f"### 📋 Local Master Database ({display_count} pending companies)")
-            st.caption(f"Showing only leads designated for {st.session_state.user_function}.")
+            st.markdown(f"### 📋 My Researched Accounts ({display_count} companies)")
+            st.caption(f"Showing accounts researched by **{st.session_state.user_email}** ({st.session_state.user_function}).")
         
         if df_local.empty:
-            st.warning("⚠️ No available companies match your current view/permissions.")
+            st.warning("⚠️ No accounts found for your user. Run a market research search to add companies.")
         else:
             df_local.reset_index(drop=True, inplace=True)
             df_local.insert(0, "No.", df_local.index + 1)
@@ -662,7 +666,11 @@ with tab_database:
             df_local["Status"] = df_local["confirmed"].apply(lambda x: "Checked" if x == 1 else "Pending")
             df_local = apply_lead_scoring(df_local)
 
-            display_cols = ["No.", "Lead Score", "function_type", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "Status", "checked_date", "found_at"]
+            display_cols = [
+                "No.", "Lead Score", "created_by", "function_type", "name", 
+                "field", "location", "website", "linkedin", "emails", 
+                "phones", "source", "source_url", "Status", "checked_date", "found_at"
+            ]
             clean_display_cols = [c for c in display_cols if c in df_local.columns]
             df_display = df_local[clean_display_cols]
 
@@ -670,6 +678,7 @@ with tab_database:
                 df_display.style.apply(highlight_green, axis=1),
                 column_config={
                     "No.": st.column_config.NumberColumn("No.", width="small"),
+                    "created_by": st.column_config.TextColumn("Researched By"),
                     "function_type": st.column_config.TextColumn("Function"),
                     "website": st.column_config.LinkColumn(),
                     "source_url": st.column_config.LinkColumn(),
@@ -703,15 +712,16 @@ with tab_database:
         st.info("No available companies to display.")
 
 # =========================================================================
-# TAB 6: ADMIN CONTROLS (VISIBLE ONLY TO ADMIN)
+# TAB 6: ADMIN CONTROLS (ADMIN ONLY)
 # =========================================================================
 if st.session_state.is_admin:
     with tab_admin:
         st.markdown("### 🔐 AIESEC Administrative Control Center")
         
-        tab_users, tab_dash, tab_del, tab_danger = st.tabs([
+        tab_users, tab_dash, tab_checked, tab_del, tab_danger = st.tabs([
             "👥 Account Management", 
-            "📊 Function-Wise Dashboard", 
+            "📊 Function & Researcher Dashboard", 
+            "🟢 Checked Companies",
             "🗑️ Delete from Local DB", 
             "⚠️ Danger Zone"
         ])
@@ -744,7 +754,7 @@ if st.session_state.is_admin:
             accounts_df = account_manager.load_accounts()
             if not accounts_df.empty:
                 display_acc_df = accounts_df.copy()
-                display_acc_df["Password"] = "••••••••"  # Mask passwords in the UI
+                display_acc_df["Password"] = "••••••••"
                 st.dataframe(display_acc_df, use_container_width=True)
 
                 del_email = st.selectbox("Select an account to remove:", accounts_df["Email"].tolist())
@@ -759,42 +769,87 @@ if st.session_state.is_admin:
             else:
                 st.info("No accounts currently registered.")
 
-        # --- SUB-TAB 2: FUNCTION-WISE DASHBOARD ---
+        # --- SUB-TAB 2: FUNCTION & RESEARCHER DASHBOARD ---
         with tab_dash:
             st.subheader("📊 Performance & Activity Dashboard")
-            
-            chosen_func = st.radio("Filter Statistics by Functional Track:", ["All", "IGT", "IGV", "B2B"], horizontal=True)
             
             all_records = dedupe.all_companies(include_confirmed=True)
             if all_records:
                 df_all = pd.DataFrame(all_records)
-                if "function_type" not in df_all.columns:
-                    df_all["function_type"] = "Unassigned"
+                if "function_type" not in df_all.columns: df_all["function_type"] = "Unassigned"
+                if "created_by" not in df_all.columns: df_all["created_by"] = "Unknown"
 
-                # Filter according to choice
+                col_f1, col_f2 = st.columns(2)
+                with col_f1:
+                    chosen_func = st.radio("Functional Track:", ["All", "IGT", "IGV", "B2B"], horizontal=True)
+                with col_f2:
+                    raw_users = [u for u in df_all["created_by"].dropna().unique().tolist() if u]
+                    users_filter_list = ["All Researchers"] + sorted(raw_users)
+                    selected_researcher = st.selectbox("Filter by Researcher:", users_filter_list)
+
+                # Filter down
+                df_admin_filtered = df_all.copy()
                 if chosen_func != "All":
-                    df_func = df_all[df_all["function_type"] == chosen_func]
-                else:
-                    df_func = df_all
+                    df_admin_filtered = df_admin_filtered[df_admin_filtered["function_type"] == chosen_func]
+                if selected_researcher != "All Researchers":
+                    df_admin_filtered = df_admin_filtered[df_admin_filtered["created_by"] == selected_researcher]
 
-                total_func_companies = len(df_func)
-                checked_func_companies = len(df_func[df_func.get("confirmed", 0) == 1])
-                pending_func_companies = total_func_companies - checked_func_companies
+                tot = len(df_admin_filtered)
+                chk = len(df_admin_filtered[df_admin_filtered.get("confirmed", 0) == 1])
+                pnd = tot - chk
 
                 c1, c2, c3 = st.columns(3)
-                c1.metric(f"Total Leads ({chosen_func})", total_func_companies)
-                c2.metric("Checked Leads", checked_func_companies)
-                c3.metric("Pending Leads", pending_func_companies)
+                c1.metric(f"Total Leads", tot)
+                c2.metric("Checked Leads", chk)
+                c3.metric("Pending Leads", pnd)
 
                 st.divider()
-                st.subheader(f"Raw Companies Data in {chosen_func}")
-                df_func_display = df_func.copy().reset_index(drop=True)
-                df_func_display.insert(0, "No.", df_func_display.index + 1)
-                st.dataframe(df_func_display, use_container_width=True)
+                st.subheader(f"Filtered Results ({tot} companies)")
+                df_admin_display = df_admin_filtered.copy().reset_index(drop=True)
+                df_admin_display.insert(0, "No.", df_admin_display.index + 1)
+                st.dataframe(df_admin_display, use_container_width=True)
             else:
                 st.info("No company records found in the database yet.")
 
-        # --- SUB-TAB 3: DELETE FROM DB ---
+        # --- SUB-TAB 3: CHECKED COMPANIES ---
+        with tab_checked:
+            st.subheader("🟢 Checked / Used Companies in Local Database")
+            checked_list = dedupe.confirmed_companies()
+            if checked_list:
+                df_checked = pd.DataFrame(checked_list)
+                df_checked["Status"] = "Checked"
+
+                col_chk_sel, col_chk_btn = st.columns([3, 1])
+                with col_chk_sel:
+                    comp_to_uncheck = st.selectbox("Select company to Uncheck (return to pending):", df_checked["name"].tolist(), key="admin_uncheck_select")
+                with col_chk_btn:
+                    st.write("")
+                    st.write("")
+                    if st.button("🔄 Uncheck Company", type="primary"):
+                        dedupe.update_company_status(comp_to_uncheck, False)
+                        st.success(f"Restored {comp_to_uncheck!r} to pending status.")
+                        time.sleep(0.5)
+                        st.rerun()
+
+                df_checked = apply_lead_scoring(df_checked)
+                cols_to_show = ["Lead Score", "created_by", "function_type", "name", "field", "location", "website", "linkedin", "emails", "phones", "source", "checked_date", "found_at"]
+                clean_cols = [c for c in cols_to_show if c in df_checked.columns]
+                
+                st.dataframe(
+                    df_checked[clean_cols].style.apply(highlight_green, axis=1),
+                    column_config={
+                        "created_by": st.column_config.TextColumn("Researched By"),
+                        "website": st.column_config.LinkColumn(),
+                        "linkedin": st.column_config.LinkColumn(),
+                        "checked_date": st.column_config.TextColumn("Date Used"),
+                        "Lead Score": st.column_config.TextColumn("Score")
+                    },
+                    use_container_width=True
+                )
+            else:
+                st.info("No companies are currently marked as Checked / Used in the Local Database.")
+
+        # --- SUB-TAB 4: DELETE FROM DB ---
         with tab_del:
             st.caption("Delete records from the master Local Database only.")
             names = [c["name"] for c in dedupe.all_companies(include_confirmed=True)]
@@ -806,7 +861,7 @@ if st.session_state.is_admin:
                     time.sleep(0.5)
                     st.rerun()
 
-        # --- SUB-TAB 4: DANGER ZONE ---
+        # --- SUB-TAB 5: DANGER ZONE ---
         with tab_danger:
             st.error("Wiping the database will clear all saved companies and reset search progress.")
             if st.button("🧨 Wipe Local Database", type="primary"):
