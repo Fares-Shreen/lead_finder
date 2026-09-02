@@ -90,6 +90,33 @@ def init_db():
         _pull_from_google_sheets()
         _CLOUD_SYNC_DONE = True
 
+def init_db():
+    with _conn() as c:
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS companies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT,
+                field TEXT,
+                location TEXT,
+                website TEXT,
+                linkedin TEXT,
+                emails TEXT,
+                phones TEXT,
+                source TEXT,
+                source_url TEXT,
+                confirmed INTEGER DEFAULT 0,
+                checked_date TEXT,
+                found_at TEXT,
+                name_normalized TEXT UNIQUE,
+                function_type TEXT DEFAULT 'IGT'
+            )
+        """)
+        # Safe migration for existing tables without the column
+        try:
+            c.execute("ALTER TABLE companies ADD COLUMN function_type TEXT DEFAULT 'IGT'")
+        except Exception:
+            pass  # Column already exists        
+
 def _pull_from_google_sheets():
     client = _get_gspread_client()
     if not client or "sheet" not in st.secrets:
