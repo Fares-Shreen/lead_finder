@@ -21,30 +21,46 @@ from search_engine import process
 import podio_live_checker
 import account_manager
 
-# =========================================================================
-# PAGE CONFIG & AIESEC BRANDING CSS
-# =========================================================================
 st.set_page_config(page_title="AIESEC Lead Engine", page_icon="👤", layout="wide")
 
-AIESEC_LOGO_URL = "https://upload.wikimedia.org/wikipedia/commons/thumb/c/cd/AIESEC_Logo.svg/512px-AIESEC_Logo.svg.png"
 AIESEC_BLUE = "#037ef3"
+
+# Safely load the local image and convert to Base64 for HTML injection
+def get_base64_image(image_path):
+    try:
+        with open(image_path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except FileNotFoundError:
+        return ""
+
+logo_base64 = get_base64_image("AIESEC-Human-Blue.png")
+AIESEC_LOGO_URL = f"data:image/png;base64,{logo_base64}"
 
 aiesec_style = f"""
     <style>
+    /* Hide default Streamlit elements */
     div[data-testid="stToolbar"] {{visibility: hidden;}}
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
 
+    /* Force buttons to AIESEC Blue */
     .stButton>button[kind="primary"] {{
-        background-color: {AIESEC_BLUE}; 
-        color: white;
-        border: none;
+        background-color: {AIESEC_BLUE} !important; 
+        color: white !important;
+        border: none !important;
     }}
     .stButton>button[kind="primary"]:hover {{
-        background-color: #0266c8;
+        background-color: #0266c8 !important;
     }}
-    h1, h2, h3 {{
+    
+    /* Force Headers and Links to AIESEC Blue */
+    h1, h2, h3, a {{
         color: {AIESEC_BLUE} !important;
+    }}
+    
+    /* Style the UI Tabs to match the branding */
+    .stTabs [data-baseweb="tab-highlight"] {{
+        background-color: {AIESEC_BLUE} !important;
     }}
     </style>
 """
@@ -136,7 +152,7 @@ with st.sidebar:
         time.sleep(0.5) # Give browser time to delete cookies
         st.rerun()
 
-st.title("AIESEC B2B Lead Engine")
+st.title("AIESEC IGT Lead Engine")
 st.caption("Directory scraper, live Podio cross-referencer, and real-time Action Hub.")
 
 col_api, col_podio = st.columns(2)
