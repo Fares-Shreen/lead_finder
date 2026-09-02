@@ -3,7 +3,6 @@ import requests
 def search_linkedin_companies(field, location, num_results, start=0, api_key=None):
     if not api_key: return []
     
-    # Removed exact-match quotes so Google doesn't drop close matches
     query = f'site:eg.linkedin.com/company {field} {location}'
     
     params = {

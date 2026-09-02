@@ -3,13 +3,14 @@ import requests
 def search_indeed(field, location, num_results, start=0, api_key=None):
     if not api_key: return []
     
-    # Switch to the native Indeed engine
+    query = f'site:indeed.com/cmp {field} {location}'
+    
     params = {
-        "engine": "indeed", 
-        "q": field,           # e.g., "software"
-        "l": location,        # e.g., "Alexandria, Egypt"
-        "api_key": api_key, 
-        "start": start        # Pagination jumps by 10 (0, 10, 20)
+        "engine": "google",
+        "q": query,
+        "api_key": api_key,
+        "num": num_results,
+        "start": start
     }
     
     try:
@@ -17,25 +18,23 @@ def search_indeed(field, location, num_results, start=0, api_key=None):
         data = res.json()
         results = []
         
-        # Native Indeed API returns a clean "jobs_results" array instead of Google organic results
-        for item in data.get("jobs_results", []):
-            company = item.get("company_name", "").strip()
+        for item in data.get("organic_results", []):
+            title = item.get("title", "")
+            link = item.get("link", "")
             
-            invalid_keywords = ["indeed", "وظائف", "confidential"]
-            comp_lower = company.lower()
+            # Clean up titles like "Working at Company | Indeed.com"
+            company = title.split(" - ")[0].split(" | ")[0].replace("Working at", "").replace("Careers and Employment", "").strip()
             
-            # Ensure we have a valid company name (not a confidential listing)
-            if company and len(company) < 50 and not any(k in comp_lower for k in invalid_keywords):
+            if company and len(company) < 40 and "Indeed" not in company:
                 results.append({
                     "name": company,
                     "website": "",
                     "linkedin": "",
                     "source": "Indeed",
-                    # Prefer share_link if available, otherwise fallback to standard link
-                    "source_url": item.get("share_link", item.get("link", "")) 
+                    "source_url": link
                 })
                 
         return results
     except Exception as e:
-        print(f"Indeed Native Scraper Error: {e}")
+        print(f"Indeed Scraper Error: {e}")
         return []

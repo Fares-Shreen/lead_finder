@@ -3,11 +3,8 @@ import requests
 def search_yellowpages(field, location, num_results, start=0, api_key=None):
     if not api_key: return []
     
-    # Extract just the city name (e.g., "Alexandria" from "Alexandria, Egypt")
     city = location.split(",")[0].strip()
-    
-    # Restricting to '/en/profile' forces Google to ONLY return individual company pages!
-    query = f'site:yellowpages.com.eg/en/profile "{field}" "{city}"'
+    query = f'site:yellowpages.com.eg/en/profile {field} {city}'
     
     params = {
         "engine": "google", 
@@ -26,7 +23,6 @@ def search_yellowpages(field, location, num_results, start=0, api_key=None):
             title = item.get("title", "")
             link = item.get("link", "")
             
-            # Profile page titles format: "Company Name - Category - Location | Yellowpages..."
             company = title.split(" - ")[0].split(" | ")[0].strip()
             
             invalid_keywords = ["yellowpages", "profile", "category"]
