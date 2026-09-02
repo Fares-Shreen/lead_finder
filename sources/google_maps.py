@@ -3,7 +3,6 @@ import requests
 def search_google_maps(field, location, num_results, start=0, api_key=None):
     if not api_key: return []
     
-    # Example query: "Software in Alexandria, Egypt"
     query = f"{field} in {location}"
     params = {
         "engine": "google_maps",
@@ -13,11 +12,10 @@ def search_google_maps(field, location, num_results, start=0, api_key=None):
     }
     
     try:
-        res = requests.get("https://serpapi.com/search", params=params)
+        res = requests.get("https://serpapi.com/search", params=params, timeout=10)
         data = res.json()
         results = []
         
-        # Google Maps results are found in 'local_results'
         for item in data.get("local_results", []):
             company = item.get("title", "")
             if company:

@@ -3,8 +3,8 @@ import requests
 def search_linkedin_companies(field, location, num_results, start=0, api_key=None):
     if not api_key: return []
     
-    # Enforce the "eg." subdomain to strictly pull Egyptian companies
-    query = f'site:eg.linkedin.com/company "{field}" "{location}"'
+    # Removed exact-match quotes so Google doesn't drop close matches
+    query = f'site:eg.linkedin.com/company {field} {location}'
     
     params = {
         "engine": "google", 
@@ -15,7 +15,7 @@ def search_linkedin_companies(field, location, num_results, start=0, api_key=Non
     }
     
     try:
-        res = requests.get("https://serpapi.com/search", params=params)
+        res = requests.get("https://serpapi.com/search", params=params, timeout=10)
         data = res.json()
         results = []
         
@@ -23,11 +23,9 @@ def search_linkedin_companies(field, location, num_results, start=0, api_key=Non
             title = item.get("title", "")
             link = item.get("link", "")
             
-            # Secondary safeguard: skip any URL that is not an Egyptian or generic LinkedIn company page
             if not ("eg.linkedin.com" in link or "www.linkedin.com" in link):
                 continue
                 
-            # Clean up the company name
             company = title.split(" | ")[0].split(" - ")[0].strip()
             
             if company and "LinkedIn" not in company:

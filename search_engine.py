@@ -41,7 +41,7 @@ def podio_api_precheck(company_name: str) -> bool:
 def process(field, location, sources, num_per_source, progress_cb=None, api_key=None, podio_email=None, podio_password=None, function_type="IGT", created_by=""):
     raw_candidates = []
     
-    if progress_cb: progress_cb("📥 Launching scrapers simultaneously...")
+    if progress_cb: progress_cb("📥 Launching SerpApi scrapers simultaneously...")
     def fetch_source(source_name):
         offset = dedupe.get_search_offset(source_name, field, location)
         try:
@@ -51,6 +51,7 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
         except Exception as e:
             return source_name, [], str(e)
 
+    # Concurrency is safe and fast with SerpApi
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(sources)) as executor:
         futures = [executor.submit(fetch_source, s) for s in sources]
         for future in concurrent.futures.as_completed(futures):
@@ -85,7 +86,7 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
         if domain: seen_domains.add(domain)
         filtered_candidates.append(lead)
 
-    # NEW STEP: ENRICH EVERYTHING UPFRONT BEFORE PODIO CHECK
+    # ENRICH EVERYTHING UPFRONT BEFORE PODIO CHECK
     if progress_cb: progress_cb(f"✨ Deeply enriching {len(filtered_candidates)} candidates upfront...")
     
     fully_enriched_candidates = []
@@ -122,11 +123,9 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
     # SAVE RESULTS
     if progress_cb: progress_cb(f"✅ Safe: {len(definitely_new)} | 🕵️ Suspects: {len(suspects_for_later)}")
 
-    # Brand new go straight to master DB
     for lead in definitely_new:
         dedupe.add_company(lead)
         
-    # Suspects go to the new Google Sheet
     if suspects_for_later:
         dedupe.add_suspects_to_sheet(suspects_for_later)
 
