@@ -101,7 +101,7 @@ if not st.session_state.authenticated:
 if not st.session_state.authenticated:
     _, center_col, _ = st.columns([1, 1.2, 1])
     with center_col:
-        st.markdown(f"<div style='text-align: center;'><img src='{AIESEC_LOGO_URL}' width='180'></div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: center;'><img src='{AIESEC_LOGO_URL}' width='90'></div>", unsafe_allow_html=True)
         st.markdown("<h2 style='text-align: center; margin-top: 10px;'>Sign In to Lead Engine</h2>", unsafe_allow_html=True)
         st.caption("<div style='text-align: center;'>AIESEC CRM & B2B Pipeline Access</div>", unsafe_allow_html=True)
         st.write("")
@@ -134,7 +134,7 @@ if not st.session_state.authenticated:
 # LOGGED-IN SIDEBAR
 # -------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'><img src='{AIESEC_LOGO_URL}' width='140'></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'><img src='{AIESEC_LOGO_URL}' width='80'></div>", unsafe_allow_html=True)
     st.markdown(f"**Account:** `{st.session_state.user_email}`")
     
     badge_color = AIESEC_BLUE if st.session_state.is_admin else "#00c16e"
