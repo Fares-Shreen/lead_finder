@@ -1,5 +1,4 @@
 import base64
-import subprocess
 import os
 import sys
 import time
@@ -11,7 +10,7 @@ import streamlit as st
 from streamlit import components
 from streamlit_cookies_controller import CookieController  # <-- NEW IMPORT
 
-subprocess.run(["playwright", "install", "chromium"], check=False)
+os.system("playwright install chromium")
 
 if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -141,11 +140,23 @@ st.title("AIESEC B2B Lead Engine")
 st.caption("Directory scraper, live Podio cross-referencer, and real-time Action Hub.")
 
 col_api, col_podio = st.columns(2)
-# Replace the old 'col_api, col_podio' block in app.py with this:
-with st.expander("🔷 Podio Credentials (Only needed for Playwright verification & Custom Uploads)", expanded=False):
-    st.session_state.podio_email = st.text_input("Podio Email", value=st.session_state.podio_email)
-    st.session_state.podio_password = st.text_input("Podio Password", value=st.session_state.podio_password, type="password")
-    st.caption("ℹ️ *Market discovery runs 100% free. Podio credentials are only used when verifying suspicious leads or uploaded lists.*")
+with col_api:
+    with st.expander("🔑 SerpApi Key", expanded=not st.session_state.serpapi_key):
+        st.session_state.serpapi_key = st.text_input("SerpApi API Key", value=st.session_state.serpapi_key, type="password")
+        st.markdown("""
+        <small>
+        <b>How to get your free key:</b><br>
+        1. <a href="https://serpapi.com/users/sign_up" target="_blank">Click here to sign up on SerpApi</a>.<br>
+        2. Verify your email address.<br>
+        3. Copy the "Your Private API Key" from your dashboard and paste it above.
+        </small>
+        """, unsafe_allow_html=True)
+
+with col_podio:
+    with st.expander("🔷 Podio Credentials (Required for Deep Check & Uploads)", expanded=False):
+        st.session_state.podio_email = st.text_input("Podio Email", value=st.session_state.podio_email)
+        st.session_state.podio_password = st.text_input("Podio Password", value=st.session_state.podio_password, type="password")
+        st.caption("ℹ️ *Optional for standard Market Research search; mandatory for Playwright Deep Checks and Custom Upload verification.*")
 
 st.divider()
 
