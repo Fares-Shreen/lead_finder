@@ -126,9 +126,10 @@ with col_api:
         """, unsafe_allow_html=True)
 
 with col_podio:
-    with st.expander("🔷 Podio Credentials", expanded=not (st.session_state.podio_email and st.session_state.podio_password)):
+    with st.expander("🔷 Podio Credentials (Required for Deep Check & Uploads)", expanded=False):
         st.session_state.podio_email = st.text_input("Podio Email", value=st.session_state.podio_email)
         st.session_state.podio_password = st.text_input("Podio Password", value=st.session_state.podio_password, type="password")
+        st.caption("ℹ️ *Optional for standard Market Research search; mandatory for Playwright Deep Checks and Custom Upload verification.*")
 
 st.divider()
 
@@ -247,7 +248,7 @@ if st.session_state.is_admin:
     tab_admin = tabs[5]
 
 # =========================================================================
-# TAB 1: RUN SEARCH
+# TAB 1: RUN SEARCH (PODIO CREDENTIALS NOT REQUIRED)
 # =========================================================================
 with tab_search:
     st.markdown("### 🔎 Market Research & Discovery")
@@ -310,10 +311,8 @@ with tab_search:
         if not fields_to_search or not sources:
             st.warning("⚠️ Please select fields and sources.")
             st.session_state.auto_run_active = False
-        elif not st.session_state.podio_email or not st.session_state.podio_password:
-            st.error("⚠️ Podio credentials are required.")
-            st.session_state.auto_run_active = False
         else:
+            # Podio credentials are not required for standard search
             if restart and not st.session_state.auto_run_active:
                 dedupe.init_db()
                 for s in sources:
@@ -330,8 +329,8 @@ with tab_search:
                     clean_leads, suspect_leads = process(
                         current_field, location, sources, num_per_source, progress_cb,
                         api_key=st.session_state.serpapi_key or None,
-                        podio_email=st.session_state.podio_email,
-                        podio_password=st.session_state.podio_password,
+                        podio_email=st.session_state.podio_email or None,
+                        podio_password=st.session_state.podio_password or None,
                         function_type=assigned_function,
                         created_by=st.session_state.user_email
                     )
@@ -350,7 +349,7 @@ with tab_search:
                     st.rerun()
 
 # =========================================================================
-# TAB 2: MANUAL DEEP CHECK (PLAYWRIGHT)
+# TAB 2: MANUAL DEEP CHECK (PODIO CREDENTIALS MANDATORY)
 # =========================================================================
 with tab_manual:
     st.markdown("### 🕵️ Need Podio Check Queue")
@@ -379,27 +378,30 @@ with tab_manual:
             check_status.code("\n".join(log_lines_p[-10:]))
             
         if st.button("🤖 Run Playwright Deep Check"):
-            batch = suspects[:batch_size]
-            names_to_remove = [c["name"] for c in batch]
-            
-            with st.spinner("Firing up Playwright headless browser..."):
-                excel1, excel2, cleared = podio_live_checker.analyze_leads_live(
-                    batch, st.session_state.podio_email, st.session_state.podio_password, prog_playwright
-                )
-            
-            for lead in cleared:
-                lead["function_type"] = manual_assigned_function
-                lead["created_by"] = st.session_state.user_email
-                dedupe.add_company(lead)
-            dedupe.sync_to_google_sheets()
-            
-            dedupe.remove_suspects_from_sheet(names_to_remove)
-            st.success(f"Processed! {len(excel1)} to Deals, {len(excel2)} to Companies, {len(cleared)} safely moved to Local DB.")
-            time.sleep(2)
-            st.rerun()
+            if not st.session_state.podio_email or not st.session_state.podio_password:
+                st.error("⚠️ Podio Email and Password are required for Playwright verification. Please set them in the top credentials expander.")
+            else:
+                batch = suspects[:batch_size]
+                names_to_remove = [c["name"] for c in batch]
+                
+                with st.spinner("Firing up Playwright headless browser..."):
+                    excel1, excel2, cleared = podio_live_checker.analyze_leads_live(
+                        batch, st.session_state.podio_email, st.session_state.podio_password, prog_playwright
+                    )
+                
+                for lead in cleared:
+                    lead["function_type"] = manual_assigned_function
+                    lead["created_by"] = st.session_state.user_email
+                    dedupe.add_company(lead)
+                dedupe.sync_to_google_sheets()
+                
+                dedupe.remove_suspects_from_sheet(names_to_remove)
+                st.success(f"Processed! {len(excel1)} to Deals, {len(excel2)} to Companies, {len(cleared)} safely moved to Local DB.")
+                time.sleep(2)
+                st.rerun()
 
 # =========================================================================
-# TAB 3: UPLOAD CUSTOM LIST (UPDATED FOR AUTO-RUN)
+# TAB 3: UPLOAD CUSTOM LIST (PODIO CREDENTIALS MANDATORY)
 # =========================================================================
 with tab_upload:
     st.markdown("### 📁 Upload Custom Excel / CSV")
@@ -467,54 +469,59 @@ with tab_upload:
                     st.warning("⚠️ Auto-Run is ACTIVE. The pipeline is running continuously...")
 
                 if st.session_state.auto_run or run_single:
-                    pending_indices = df_upload[df_upload["Podio Checked"] == 0].head(batch_size).index
-                    
-                    custom_candidates = []
-                    for idx in pending_indices:
-                        comp_name = str(df_upload.loc[idx, name_col]).strip()
-                        if comp_name and comp_name.lower() != "nan":
-                            custom_candidates.append({
-                                "name": comp_name,
-                                "field": "Custom Upload",
-                                "location": "Custom Upload",
-                                "source": "Manual Upload",
-                                "_upload_idx": idx 
-                            })
-                            
-                    if not custom_candidates:
-                        st.warning("No valid company names found in the selected batch.")
-                        st.session_state.auto_run = False 
+                    # Podio credentials required for custom list verification
+                    if not st.session_state.podio_email or not st.session_state.podio_password:
+                        st.error("⚠️ Podio Email and Password are required to verify uploaded companies. Please configure them in the header expander.")
+                        st.session_state.auto_run = False
                     else:
-                        upload_status = st.empty()
-                        upload_logs = []
-                        def prog_upload(msg):
-                            upload_logs.append(msg)
-                            upload_status.code("\n".join(upload_logs[-10:]))
-                            
-                        with st.spinner(f"Processing {len(custom_candidates)} uploaded companies..."):
-                            ex1, ex2, cleared = podio_live_checker.analyze_leads_live(
-                                custom_candidates, st.session_state.podio_email, st.session_state.podio_password, prog_upload
-                            )
-                            
-                            for cand in custom_candidates:
-                                st.session_state.upload_df.loc[cand["_upload_idx"], "Podio Checked"] = 1
-                            
-                            for lead in cleared:
-                                lead.pop("_upload_idx", None)
-                                lead["function_type"] = upload_assigned_function 
-                                lead["created_by"] = st.session_state.user_email
-                                dedupe.add_company(lead)
-                            dedupe.sync_to_google_sheets()
-                            
-                        st.success(f"Batch Processed! ✅ {len(ex1)} to Deals, {len(ex2)} to Companies.")
+                        pending_indices = df_upload[df_upload["Podio Checked"] == 0].head(batch_size).index
                         
-                        if st.session_state.auto_run:
-                            time.sleep(2)
-                            st.rerun()
+                        custom_candidates = []
+                        for idx in pending_indices:
+                            comp_name = str(df_upload.loc[idx, name_col]).strip()
+                            if comp_name and comp_name.lower() != "nan":
+                                custom_candidates.append({
+                                    "name": comp_name,
+                                    "field": "Custom Upload",
+                                    "location": "Custom Upload",
+                                    "source": "Manual Upload",
+                                    "_upload_idx": idx 
+                                })
+                                
+                        if not custom_candidates:
+                            st.warning("No valid company names found in the selected batch.")
+                            st.session_state.auto_run = False 
                         else:
-                            st.session_state.trigger_download = True
-                            time.sleep(1.5)
-                            st.rerun()
+                            upload_status = st.empty()
+                            upload_logs = []
+                            def prog_upload(msg):
+                                upload_logs.append(msg)
+                                upload_status.code("\n".join(upload_logs[-10:]))
+                                
+                            with st.spinner(f"Processing {len(custom_candidates)} uploaded companies..."):
+                                ex1, ex2, cleared = podio_live_checker.analyze_leads_live(
+                                    custom_candidates, st.session_state.podio_email, st.session_state.podio_password, prog_upload
+                                )
+                                
+                                for cand in custom_candidates:
+                                    st.session_state.upload_df.loc[cand["_upload_idx"], "Podio Checked"] = 1
+                                
+                                for lead in cleared:
+                                    lead.pop("_upload_idx", None)
+                                    lead["function_type"] = upload_assigned_function 
+                                    lead["created_by"] = st.session_state.user_email
+                                    dedupe.add_company(lead)
+                                dedupe.sync_to_google_sheets()
+                                
+                            st.success(f"Batch Processed! ✅ {len(ex1)} to Deals, {len(ex2)} to Companies.")
+                            
+                            if st.session_state.auto_run:
+                                time.sleep(2)
+                                st.rerun()
+                            else:
+                                st.session_state.trigger_download = True
+                                time.sleep(1.5)
+                                st.rerun()
             else:
                 st.session_state.auto_run = False
                 st.success("🎉 All companies in this file have been checked! You can download the finalized file below.")
