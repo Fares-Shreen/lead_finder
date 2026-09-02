@@ -1,40 +1,37 @@
 import requests
 
 def search_indeed(field, location, num_results, start=0, api_key=None):
-    if not api_key: return []
+    if not api_key: raise Exception("No SerpApi key provided.")
     
-    query = f'site:indeed.com/cmp {field} {location}'
+    # Searches both the global and Egyptian Indeed domains, and removes the strict /cmp filter
+    query = f'{field} "{location}" (site:eg.indeed.com OR site:indeed.com)'
     
     params = {
         "engine": "google",
         "q": query,
         "api_key": api_key,
-        "num": num_results,
+        "num": min(num_results, 20),
         "start": start
     }
     
-    try:
-        res = requests.get("https://serpapi.com/search", params=params, timeout=10)
-        data = res.json()
-        results = []
+    res = requests.get("https://serpapi.com/search", params=params, timeout=15)
+    data = res.json()
+    
+    if "error" in data: 
+        raise Exception(f"SerpApi Error: {data['error']}")
         
-        for item in data.get("organic_results", []):
-            title = item.get("title", "")
-            link = item.get("link", "")
+    results = []
+    # Grab EVERYTHING Google returns to see what data is actually there
+    for item in data.get("organic_results", []):
+        title = item.get("title", "Unknown")
+        link = item.get("link", "")
+        
+        results.append({
+            "name": title,  # Passing raw title so we can see what it looks like in the DB
+            "website": "",
+            "linkedin": "",
+            "source": "Indeed",
+            "source_url": link
+        })
             
-            # Clean up titles like "Working at Company | Indeed.com"
-            company = title.split(" - ")[0].split(" | ")[0].replace("Working at", "").replace("Careers and Employment", "").strip()
-            
-            if company and len(company) < 40 and "Indeed" not in company:
-                results.append({
-                    "name": company,
-                    "website": "",
-                    "linkedin": "",
-                    "source": "Indeed",
-                    "source_url": link
-                })
-                
-        return results
-    except Exception as e:
-        print(f"Indeed Scraper Error: {e}")
-        return []
+    return results
