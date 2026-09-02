@@ -21,46 +21,30 @@ from search_engine import process
 import podio_live_checker
 import account_manager
 
+# =========================================================================
+# PAGE CONFIG & AIESEC BRANDING CSS
+# =========================================================================
 st.set_page_config(page_title="AIESEC Lead Engine", page_icon="👤", layout="wide")
 
+AIESEC_LOGO_URL = "./AIESEC-Human-Blue.png"
 AIESEC_BLUE = "#037ef3"
-
-# Safely load the local image and convert to Base64 for HTML injection
-def get_base64_image(image_path):
-    try:
-        with open(image_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
-    except FileNotFoundError:
-        return ""
-
-logo_base64 = get_base64_image("AIESEC-Human-Blue.png")
-AIESEC_LOGO_URL = f"data:image/png;base64,{logo_base64}"
 
 aiesec_style = f"""
     <style>
-    /* Hide default Streamlit elements */
     div[data-testid="stToolbar"] {{visibility: hidden;}}
     #MainMenu {{visibility: hidden;}}
     footer {{visibility: hidden;}}
 
-    /* Force buttons to AIESEC Blue */
     .stButton>button[kind="primary"] {{
-        background-color: {AIESEC_BLUE} !important; 
-        color: white !important;
-        border: none !important;
+        background-color: {AIESEC_BLUE}; 
+        color: white;
+        border: none;
     }}
     .stButton>button[kind="primary"]:hover {{
-        background-color: #0266c8 !important;
+        background-color: #0266c8;
     }}
-    
-    /* Force Headers and Links to AIESEC Blue */
-    h1, h2, h3, a {{
+    h1, h2, h3 {{
         color: {AIESEC_BLUE} !important;
-    }}
-    
-    /* Style the UI Tabs to match the branding */
-    .stTabs [data-baseweb="tab-highlight"] {{
-        background-color: {AIESEC_BLUE} !important;
     }}
     </style>
 """
@@ -101,7 +85,17 @@ if not st.session_state.authenticated:
 if not st.session_state.authenticated:
     _, center_col, _ = st.columns([1, 1.2, 1])
     with center_col:
-        st.markdown(f"<div style='text-align: center;'><img src='{AIESEC_LOGO_URL}' width='90'></div>", unsafe_allow_html=True)
+        st.markdown(
+    f"""
+    <div style='text-align: center;'>
+        <img src='{AIESEC_LOGO_URL}' 
+             width='40' 
+             height='40'
+             style='border-radius: 50%; object-fit: cover;'>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
         st.markdown("<h2 style='text-align: center; margin-top: 10px;'>Sign In to Lead Engine</h2>", unsafe_allow_html=True)
         st.caption("<div style='text-align: center;'>AIESEC CRM & B2B Pipeline Access</div>", unsafe_allow_html=True)
         st.write("")
@@ -134,7 +128,7 @@ if not st.session_state.authenticated:
 # LOGGED-IN SIDEBAR
 # -------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'><img src='{AIESEC_LOGO_URL}' width='80'></div>", unsafe_allow_html=True)
+    st.markdown(f"<div style='text-align: center; margin-bottom: 20px;'>"f"<img src='{AIESEC_LOGO_URL}' width='40' height='40' "f"style='border-radius: 50%; object-fit: cover;'>"f"</div>",unsafe_allow_html=True )
     st.markdown(f"**Account:** `{st.session_state.user_email}`")
     
     badge_color = AIESEC_BLUE if st.session_state.is_admin else "#00c16e"
