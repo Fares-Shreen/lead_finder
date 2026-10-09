@@ -58,6 +58,9 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
             else:
                 report["source_counts"][source_name] = len(results)
                 if progress_cb: progress_cb(f"✅ {source_name}: Found {len(results)} location-qualified company profiles.")
+                diagnostics = getattr(results, "diagnostics", {})
+                if progress_cb and diagnostics:
+                    progress_cb(f"🔬 {source_name}: " + "; ".join(f"{label}: {count}" for label, count in diagnostics.items()))
                 for r in results:
                     r["field"] = field
                     r["function_type"] = function_type

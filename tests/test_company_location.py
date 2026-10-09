@@ -17,7 +17,14 @@ class CompanyLocationTests(unittest.TestCase):
                 self.assertEqual(location_evidence({"address": address}), address)
 
     def test_accepts_explicit_profile_location(self):
-        for snippet in ("Headquarters: Alexandria, Egypt", "Alexandria, Egypt · Software", "A software company based in Alexandria, Egypt."):
+        for snippet in (
+            "Headquarters: Alexandria, Egypt", "Alexandria, Egypt · Software",
+            "A software company based in Alexandria, Egypt.",
+            "OFILMS is a media production house based in Alexandria, Egypt.",
+            "Headquartered in Alexandria, Egypt, we provide IT solutions.",
+            "Our head office is based in Egypt, Alexandria.",
+            "Information Technology · Alexandria, Alexandria 21615, EG",
+        ):
             self.assertTrue(location_evidence({"snippet": snippet}))
 
     def test_rejects_wrong_or_missing_locations_and_service_area(self):
@@ -45,8 +52,9 @@ class CompanyLocationTests(unittest.TestCase):
         self.assertIsNone(lead)
         self.assertIn("location not established", reason)
 
+    @patch("sources.company_profiles.verify_on_maps", return_value=None)
     @patch("sources.company_profiles._search")
-    def test_linkedin_fallback_runs_when_profiles_have_wrong_city(self, search):
+    def test_linkedin_fallback_runs_when_profiles_have_wrong_city(self, search, maps):
         search.side_effect = [
             [{"title": "Cairo Company | LinkedIn", "link": "https://linkedin.com/company/cairo", "snippet": "Headquarters: Cairo, Egypt"}],
             [{"title": "Alex Company | LinkedIn", "link": "https://linkedin.com/company/alex", "snippet": "Headquarters: Alexandria, Egypt"}],

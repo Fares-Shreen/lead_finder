@@ -143,4 +143,7 @@ def sanitize_lead(lead: dict):
         return None, "Alexandria, Egypt location not established"
     cleaned["location"] = TARGET_LOCATION
     cleaned["location_evidence"] = evidence
+    maps_evidence_url = normalize_url(cleaned.get("location_evidence_url"))
+    if is_valid_source_url("Google Maps", maps_evidence_url):
+        cleaned["location_evidence"] += " | Maps: " + maps_evidence_url
     return cleaned, ""

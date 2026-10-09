@@ -40,7 +40,7 @@ Opens a page with 3 inputs — **Field**, **Location**, **Sources** — plus a
   Yellow Pages results to point to real company-profile pages.
 - `sources/company_profiles.py` — shared company discovery for LinkedIn,
   Yellow Pages, Wuzzuf, Indeed, and Clutch. Queries use separate city/country
-  terms and try a city-only fallback when the first query produces no valid
+  terms and try related industry terms when the first query produces no valid
   companies. LinkedIn also tries the Egyptian subdomain. Known profile tabs
   are converted to the main company URL and duplicate profile URLs are merged.
 - `extractor.py` — visits a company's own website and its contact page to
@@ -92,6 +92,16 @@ the updated queries. Existing saved companies are still skipped. The maximum
 companies setting is a cap for the page, not a promise of that many companies.
 Fallback queries only run when a query returns no valid company profiles;
 each additional query can consume another SerpApi search.
+
+For IT and Video Editing, fallback queries also search related company industries
+(information technology/software and video/media production). Successful empty
+Google searches continue to these fallbacks instead of being reported as errors.
+Directory sources may make up to two extra Maps searches per source/field/page
+to verify a missing address. Only an exact normalized company-name match with an
+Alexandria, Egypt address is accepted; failed checks never supply a location.
+The Maps evidence link is saved with the lead. This uses additional SerpApi quota.
+Enable Google Maps as a source for direct address-based discovery. Diagnostic
+counts show whether profiles were missing altogether or rejected for location.
 
 ## Deploying for your team (GitHub → Streamlit Community Cloud)
 

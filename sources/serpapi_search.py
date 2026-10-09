@@ -58,6 +58,12 @@ def _request_json(url, params, key):
         raise RuntimeError(f"SerpApi returned invalid JSON (HTTP {r.status_code}).") from None
     if not isinstance(data, dict):
         raise RuntimeError("SerpApi returned an unexpected response format.")
+    if (r.status_code == 200
+            and data.get("error") == "Google hasn't returned any results for this query."
+            and (data.get("search_metadata") or {}).get("status", "Success") == "Success"):
+        # SerpApi documents this as a successful empty search, not an outage.
+        data.pop("error")
+        data.setdefault("organic_results", [])
     if "error" in data:
         raise RuntimeError(f"SerpApi: {str(data['error']).replace(key, '[redacted]')}")
     if r.status_code >= 400:

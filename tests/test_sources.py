@@ -16,6 +16,26 @@ def response(payload):
 
 
 class SourceContractTests(unittest.TestCase):
+    @patch("sources.serpapi_search.requests.get")
+    def test_successful_empty_search_continues_to_fallback(self, get):
+        get.side_effect = [
+            response({"search_metadata": {"status": "Success"},
+                      "error": "Google hasn't returned any results for this query."}),
+            response({"organic_results": [
+                {"title": "Acme | LinkedIn", "link": "https://linkedin.com/company/acme",
+                 "snippet": "Headquarters: Alexandria, Egypt"},
+            ]}),
+        ]
+        leads = search_linkedin_companies("IT", "Alexandria, Egypt", 10, api_key="key")
+        self.assertEqual([lead["name"] for lead in leads], ["Acme"])
+        self.assertIn("information technology", get.call_args_list[1].kwargs["params"]["q"])
+
+    @patch("sources.google_maps.requests.get")
+    def test_maps_successful_empty_search_is_not_an_error(self, get):
+        get.return_value = response({"search_metadata": {"status": "Success"},
+                                     "error": "Google hasn't returned any results for this query."})
+        self.assertEqual(search_google_maps("IT", "Alexandria, Egypt", 10, api_key="key"), [])
+
     @patch("sources.google_maps.requests.get")
     def test_maps_builds_clickable_link_and_uses_nested_website(self, get):
         get.return_value = response({"local_results": [{

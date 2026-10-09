@@ -314,6 +314,8 @@ with tab_search:
         ["Google Maps", "LinkedIn", "Yellow Pages", "Wuzzuf", "Indeed"],
         default=["Google Maps", "LinkedIn", "Wuzzuf", "Indeed"]
     )
+    if "Google Maps" not in sources:
+        st.caption("Google Maps can discover local companies directly. For directory profiles with missing location text, up to two additional Maps address checks run per source per field.")
     num_per_source = st.slider("Maximum companies per source (per field)", 10, 100, 20, step=10)
     st.caption("Each run searches one result page per source, with a fallback when no company profiles are found. The number of companies can be lower than the limit. Use Restart to revisit the first page; saved companies are skipped.")
     restart = st.checkbox("Start this field + location over from the beginning", value=False)

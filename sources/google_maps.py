@@ -20,9 +20,15 @@ def search_google_maps(field, location, num_results, start=0, api_key=None):
     
     res = requests.get("https://serpapi.com/search", params=params, timeout=10)
     data = res.json()
+
+    if (res.status_code == 200
+            and data.get("error") == "Google hasn't returned any results for this query."
+            and (data.get("search_metadata") or {}).get("status", "Success") == "Success"):
+        return []
     
     if "error" in data:
-        raise Exception(f"SerpApi Error: {data['error']}")
+        raise Exception(f"SerpApi Error: {str(data['error']).replace(api_key, '[redacted]')}")
+    res.raise_for_status()
         
     results = []
     for item in data.get("local_results", []):

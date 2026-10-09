@@ -1,10 +1,25 @@
 """Discover directory company profiles with a bounded query fallback."""
 import re
+from collections import Counter
 from urllib.parse import urlparse, urlunparse
 
 from lead_quality import is_valid_source_url, sanitize_lead, normalize_url
 from sources.serpapi_search import _search
 from company_location import TARGET_LOCATION
+from sources.location_verifier import verify_on_maps
+
+
+class CompanyProfiles(list):
+    def __init__(self):
+        super().__init__()
+        self.diagnostics = Counter()
+
+
+def industry_terms(field):
+    return {
+        "it": '("information technology" OR "IT services" OR software)',
+        "video editing": '("video production" OR "post production" OR "media production")',
+    }.get(field.strip().casefold(), field.strip())
 
 PROFILE_SITES = {
     "LinkedIn": "linkedin.com/company",
@@ -56,30 +71,55 @@ def search_company_profiles(source, field, location, num_results, start=0, api_k
     # Avoid requiring an exact city/country punctuation format.
     queries = [
         f"site:{site} {field.strip()} {location.replace(',', ' ').strip()}",
-        f'site:{site} {field.strip()} "{city}" "Egypt"',
+        f'site:{site} {industry_terms(field)} "{city}" "Egypt"',
     ]
     if source == "LinkedIn":
-        queries.append(f"site:eg.linkedin.com/company {field.strip()} {city} Egypt")
+        queries.append(f"site:eg.linkedin.com/company {industry_terms(field)} {city} Egypt")
+    results = CompanyProfiles()
+    seen = set()
+    checked_on_maps = {}
+    maps_checks_remaining = 2
     for query in dict.fromkeys(queries):
         items = _search(query, num=num_results, start=start, api_key=api_key)
-        results, seen = [], set()
+        results.diagnostics["search results examined"] += len(items)
         for item in items:
             url = profile_url(source, item.get("link"))
             if not url or url.lower() in seen:
+                results.diagnostics["non-company/duplicate URLs"] += 1
                 continue
-            candidate, _ = sanitize_lead({
+            raw = {
                 "name": company_name(source, item.get("title")),
                 "source": source,
                 "source_url": url,
                 "linkedin": url if source == "LinkedIn" else "",
                 "website": "",
                 "snippet": item.get("snippet", ""),
-            })
+            }
+            candidate, reason = sanitize_lead(raw)
+            if not candidate and reason == "Alexandria, Egypt location not established":
+                name_key = raw["name"].casefold()
+                if name_key not in checked_on_maps and maps_checks_remaining:
+                    maps_checks_remaining -= 1
+                    results.diagnostics["Maps address checks"] += 1
+                    try:
+                        checked_on_maps[name_key] = verify_on_maps(raw["name"], api_key)
+                    except Exception:
+                        checked_on_maps[name_key] = None
+                        results.diagnostics["Maps checks unavailable"] += 1
+                place = checked_on_maps.get(name_key)
+                if place:
+                    raw["address"] = place["address"]
+                    raw["location_evidence_url"] = place["source_url"]
+                    raw["website"] = place.get("website", "")
+                    raw["phones"] = place.get("phones", [])
+                    candidate, reason = sanitize_lead(raw)
             if candidate:
                 results.append(candidate)
                 seen.add(url.lower())
+            else:
+                results.diagnostics[reason] += 1
             if len(results) >= num_results:
                 break
         if results:
             return results
-    return []
+    return results
