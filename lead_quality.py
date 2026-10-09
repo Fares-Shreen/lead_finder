@@ -7,6 +7,7 @@ the company database even when an upstream query returns them.
 
 import re
 from urllib.parse import parse_qs, unquote, urlparse, urlunparse
+from company_location import TARGET_LOCATION, location_evidence
 
 
 BLOCKED_WEBSITE_DOMAINS = {
@@ -137,4 +138,9 @@ def sanitize_lead(lead: dict):
         if is_valid_source_url("LinkedIn", linkedin)
         else ""
     )
+    evidence = location_evidence(cleaned)
+    if not evidence:
+        return None, "Alexandria, Egypt location not established"
+    cleaned["location"] = TARGET_LOCATION
+    cleaned["location_evidence"] = evidence
     return cleaned, ""

@@ -306,7 +306,8 @@ with tab_search:
         fields_to_search.extend([x.strip() for x in custom_fields_input.split(",") if x.strip()])
     fields_to_search = list(set(fields_to_search))
 
-    location = st.text_input("Location", value="Alexandria, Egypt")
+    location = st.text_input("Required company location", value="Alexandria, Egypt", disabled=True)
+    st.caption("Only companies with an address or explicit profile location in Alexandria, Egypt are accepted. A mention in the search query or company name is insufficient.")
     sources = st.multiselect(
         "Search on",
         ["Google Maps", "LinkedIn", "Yellow Pages", "Wuzzuf", "Indeed"],
@@ -371,7 +372,7 @@ with tab_search:
                     discovered_companies = clean_leads + suspect_leads
                     if discovered_companies:
                         st.dataframe(
-                            pd.DataFrame(discovered_companies)[["name", "source", "website", "linkedin", "source_url"]],
+                            pd.DataFrame(discovered_companies)[["name", "location", "location_evidence", "source", "website", "linkedin", "source_url"]],
                             column_config={
                                 "name": "Company",
                                 "website": st.column_config.LinkColumn("Website"),
@@ -716,7 +717,7 @@ with tab_database:
 
             display_cols = [
                 "No.", "Lead Score", "created_by", "function_type", "name", 
-                "field", "location", "website", "linkedin", "emails", 
+                "field", "location", "address", "location_evidence", "website", "linkedin", "emails",
                 "phones", "source", "source_url", "Status", "checked_date", "found_at"
             ]
             clean_display_cols = [c for c in display_cols if c in df_local.columns]

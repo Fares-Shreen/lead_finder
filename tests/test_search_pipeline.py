@@ -8,7 +8,9 @@ import search_engine
 class PipelineTests(unittest.TestCase):
     def test_only_companies_reach_enrichment_and_storage(self):
         candidates = [
-            {"name": "Acme Video", "source": "LinkedIn", "source_url": "https://linkedin.com/company/acme-video", "linkedin": "https://linkedin.com/company/acme-video"},
+            {"name": "Acme Video", "source": "LinkedIn", "source_url": "https://linkedin.com/company/acme-video", "linkedin": "https://linkedin.com/company/acme-video", "snippet": "Headquarters: Alexandria, Egypt"},
+            {"name": "Acme Cairo", "source": "LinkedIn", "source_url": "https://linkedin.com/company/acme-cairo", "snippet": "Headquarters: Cairo, Egypt. Serving Alexandria, Egypt."},
+            {"name": "Alexandria Agency", "source": "LinkedIn", "source_url": "https://linkedin.com/company/unknown", "location": "Alexandria, Egypt"},
             {"name": "Tutorial", "source": "LinkedIn", "source_url": "https://youtube.com/watch?v=1"},
             {"name": "Vacancy", "source": "LinkedIn", "source_url": "https://linkedin.com/jobs/view/123"},
         ]

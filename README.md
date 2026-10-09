@@ -56,6 +56,16 @@ Opens a page with 3 inputs — **Field**, **Location**, **Sources** — plus a
 
 ### Search troubleshooting
 
+Company discovery is restricted to **Alexandria, Egypt**. A Google Maps
+address must explicitly include the city and country. Directory/LinkedIn
+results need an explicit headquarters/address/location statement or a profile
+location line naming Alexandria, Egypt. Arabic city/country names are supported.
+The search query, company name, Egyptian website subdomain, and service-area
+mentions are not location evidence. Unclear locations are excluded, which can
+reduce the number of leads. This checks source-provided text, not independent
+physical verification of the business premises. The evidence is shown in the
+results and saved with new companies; historical rows remain unverified.
+
 The search screen shows newly discovered companies with clickable profile
 links, including companies awaiting Podio review. The progress log separately
 counts rejected results, duplicates, and companies already awaiting review.

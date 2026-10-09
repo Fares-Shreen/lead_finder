@@ -58,10 +58,16 @@ def init_db():
                 podio_matched_title TEXT,
                 podio_link TEXT,
                 function_type TEXT DEFAULT 'IGT',
-                created_by TEXT DEFAULT ''
+                created_by TEXT DEFAULT '',
+                address TEXT DEFAULT '',
+                location_evidence TEXT DEFAULT ''
             )
         """)
         # Safe migrations for existing SQLite databases
+        existing_columns = {row[1] for row in c.execute("PRAGMA table_info(companies)")}
+        for column in ("address", "location_evidence"):
+            if column not in existing_columns:
+                c.execute(f"ALTER TABLE companies ADD COLUMN {column} TEXT DEFAULT ''")
         try:
             c.execute("ALTER TABLE companies ADD COLUMN checked_date TEXT")
         except sqlite3.OperationalError:
@@ -112,8 +118,8 @@ def _pull_from_google_sheets():
                 for r in records:
                     c.execute("""
                         INSERT OR IGNORE INTO companies 
-                        (name_normalized, name, field, location, website, linkedin, emails, phones, source, confirmed, checked_date, found_at, podio_matched_title, podio_link, source_url, function_type, created_by)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        (name_normalized, name, field, location, website, linkedin, emails, phones, source, confirmed, checked_date, found_at, podio_matched_title, podio_link, source_url, function_type, created_by, address, location_evidence)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """, (
                         r.get("name_normalized", ""), r.get("name", ""), r.get("field", ""), 
                         r.get("location", ""), r.get("website", ""), r.get("linkedin", ""), 
@@ -122,7 +128,8 @@ def _pull_from_google_sheets():
                         r.get("checked_date", ""),
                         r.get("found_at", ""), r.get("podio_matched_title", ""), 
                         r.get("podio_link", ""), r.get("source_url", ""),
-                        r.get("function_type", "IGT"), r.get("created_by", "")
+                        r.get("function_type", "IGT"), r.get("created_by", ""),
+                        r.get("address", ""), r.get("location_evidence", "")
                     ))
             except Exception:
                 pass
@@ -215,8 +222,8 @@ def add_company(record: dict):
     with _conn() as c:
         c.execute(
             """INSERT OR IGNORE INTO companies
-               (name_normalized, name, field, location, website, linkedin, emails, phones, source, source_url, confirmed, checked_date, function_type, created_by)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?)""",
+               (name_normalized, name, field, location, website, linkedin, emails, phones, source, source_url, confirmed, checked_date, function_type, created_by, address, location_evidence)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, '', ?, ?, ?, ?)""",
             (
                 _normalize(record["name"]),
                 record.get("name", ""),
@@ -229,7 +236,9 @@ def add_company(record: dict):
                 record.get("source", ""),
                 record.get("source_url", ""),
                 record.get("function_type", "IGT"),
-                record.get("created_by", "")
+                record.get("created_by", ""),
+                record.get("address", ""),
+                record.get("location_evidence", "")
             ),
         )
 
@@ -245,7 +254,7 @@ def save_podio_duplicate(name: str, matched_title: str, link: str):
         )
 
 def all_companies(include_confirmed: bool = False):
-    cols = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "confirmed", "checked_date", "found_at", "function_type", "created_by"]
+    cols = ["name", "field", "location", "website", "linkedin", "emails", "phones", "source", "source_url", "confirmed", "checked_date", "found_at", "function_type", "created_by", "address", "location_evidence"]
     where = "" if include_confirmed else "WHERE confirmed = 0 OR confirmed IS NULL"
     with _conn() as c:
         rows = c.execute(f"SELECT {', '.join(cols)} FROM companies {where} ORDER BY found_at DESC").fetchall()

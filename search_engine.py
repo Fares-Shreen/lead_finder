@@ -11,6 +11,7 @@ from sources.google_maps import search_google_maps
 import dedupe
 import extractor
 from lead_quality import sanitize_lead
+from company_location import TARGET_LOCATION
 
 SOURCE_FUNCS = {
     "Google Maps": search_google_maps,
@@ -40,6 +41,7 @@ def podio_api_precheck(company_name: str) -> bool:
         return True 
 
 def process(field, location, sources, num_per_source, progress_cb=None, api_key=None, podio_email=None, podio_password=None, function_type="IGT", created_by=""):
+    location = TARGET_LOCATION
     if not sources:
         return [], []
     raw_candidates = []
@@ -64,7 +66,6 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
                 if progress_cb: progress_cb(f"✅ {source_name}: Found {len(results)} raw leads.")
                 for r in results:
                     r["field"] = field
-                    r["location"] = location
                     r["function_type"] = function_type
                     r["created_by"] = created_by
                     raw_candidates.append(r)

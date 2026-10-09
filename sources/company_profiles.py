@@ -4,6 +4,7 @@ from urllib.parse import urlparse, urlunparse
 
 from lead_quality import is_valid_source_url, sanitize_lead, normalize_url
 from sources.serpapi_search import _search
+from company_location import TARGET_LOCATION
 
 PROFILE_SITES = {
     "LinkedIn": "linkedin.com/company",
@@ -49,15 +50,16 @@ def company_name(source, title):
 
 
 def search_company_profiles(source, field, location, num_results, start=0, api_key=None):
+    location = TARGET_LOCATION
     city = location.split(",")[0].strip()
     site = PROFILE_SITES[source]
     # Avoid requiring an exact city/country punctuation format.
     queries = [
         f"site:{site} {field.strip()} {location.replace(',', ' ').strip()}",
-        f"site:{site} {field.strip()} {city}",
+        f'site:{site} {field.strip()} "{city}" "Egypt"',
     ]
     if source == "LinkedIn":
-        queries.append(f"site:eg.linkedin.com/company {field.strip()} {city}")
+        queries.append(f"site:eg.linkedin.com/company {field.strip()} {city} Egypt")
     for query in dict.fromkeys(queries):
         items = _search(query, num=num_results, start=start, api_key=api_key)
         results, seen = [], set()

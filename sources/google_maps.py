@@ -1,9 +1,11 @@
 import requests
 from urllib.parse import quote_plus
 from config import SERPAPI_KEY
-from lead_quality import is_valid_source_url
+from lead_quality import is_valid_source_url, sanitize_lead
+from company_location import TARGET_LOCATION
 
 def search_google_maps(field, location, num_results, start=0, api_key=None):
+    location = TARGET_LOCATION
     api_key = api_key or SERPAPI_KEY
     if not api_key: raise Exception("No SerpApi key provided.")
     
@@ -37,7 +39,7 @@ def search_google_maps(field, location, num_results, start=0, api_key=None):
                     "https://www.google.com/maps/search/?api=1&query="
                     + quote_plus(f"{company}, {location}")
                 )
-            results.append({
+            candidate, _ = sanitize_lead({
                 "name": company,
                 "website": website,
                 "linkedin": "",
@@ -45,8 +47,11 @@ def search_google_maps(field, location, num_results, start=0, api_key=None):
                 "phones": [phone] if phone else [],
                 "source": "Google Maps",
                 "source_url": source_url,
-                "snippet": item.get("description", "")
+                "snippet": item.get("description", ""),
+                "address": item.get("address", ""),
             })
+            if candidate:
+                results.append(candidate)
             if len(results) >= num_results:
                 break
                 

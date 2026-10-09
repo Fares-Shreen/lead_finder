@@ -22,7 +22,8 @@ and have no cap at all.
 import requests
 
 from config import SERPAPI_KEY, REQUEST_TIMEOUT
-from lead_quality import is_useful_company_name, is_useful_company_website, normalize_url
+from lead_quality import is_useful_company_name, is_useful_company_website, normalize_url, sanitize_lead
+from company_location import TARGET_LOCATION
 
 ENDPOINT = "https://serpapi.com/search"
 
@@ -54,6 +55,7 @@ def _search(query, num=10, start=0, api_key=None):
 
 def search_google_companies(field, location, num=10, start=0, api_key=None):
     """General web search for companies matching field+location."""
+    location = TARGET_LOCATION
     query = (
         f'"{field}" company in "{location}" '
         '-site:linkedin.com -site:youtube.com -site:facebook.com '
@@ -67,13 +69,15 @@ def search_google_companies(field, location, num=10, start=0, api_key=None):
         name = title.split(" - ")[0].split(" | ")[0].strip()
         if not is_useful_company_name(name) or not is_useful_company_website(website):
             continue
-        results.append({
+        candidate, _ = sanitize_lead({
             "name": name,
             "website": website,
             "source_url": website,
             "snippet": it.get("snippet", ""),
             "source": "Google",
         })
+        if candidate:
+            results.append(candidate)
     return results
 
 

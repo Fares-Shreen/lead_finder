@@ -20,6 +20,7 @@ class SourceContractTests(unittest.TestCase):
         get.return_value = response({"local_results": [{
             "title": "Acme",
             "place_id": "123456789",
+            "address": "Smouha, Alexandria, Egypt",
             "links": {"website": "https://acme.example"},
         }]})
         lead = search_google_maps("Software", "Alexandria, Egypt", 10, api_key="key")[0]
@@ -30,7 +31,7 @@ class SourceContractTests(unittest.TestCase):
     @patch("sources.serpapi_search.requests.get")
     def test_wuzzuf_keeps_profiles_and_drops_job_pages(self, get):
         get.return_value = response({"organic_results": [
-            {"title": "Jobs and Careers at Acme in Egypt", "link": "https://wuzzuf.net/jobs/careers/Acme-Egypt-1"},
+            {"title": "Jobs and Careers at Acme in Egypt", "link": "https://wuzzuf.net/jobs/careers/Acme-Egypt-1", "snippet": "Alexandria, Egypt. Software"},
             {"title": "Developer at Acme", "link": "https://wuzzuf.net/jobs/p/123"},
         ]})
         leads = search_wuzzuf("Software", "Alexandria, Egypt", 10, api_key="key")
@@ -39,7 +40,7 @@ class SourceContractTests(unittest.TestCase):
     @patch("sources.serpapi_search.requests.get")
     def test_indeed_keeps_employer_profiles_and_drops_search_pages(self, get):
         get.return_value = response({"organic_results": [
-            {"title": "Working at Acme: Reviews", "link": "https://eg.indeed.com/cmp/Acme"},
+            {"title": "Working at Acme: Reviews", "link": "https://eg.indeed.com/cmp/Acme", "snippet": "Headquarters: Alexandria, Egypt"},
             {"title": "Software jobs", "link": "https://eg.indeed.com/jobs?q=software"},
         ]})
         leads = search_indeed("Software", "Alexandria, Egypt", 10, api_key="key")
@@ -49,7 +50,7 @@ class SourceContractTests(unittest.TestCase):
     def test_linkedin_falls_back_after_no_company_profiles(self, search):
         search.side_effect = [
             [{"title": "Developer", "link": "https://linkedin.com/jobs/view/123"}],
-            [{"title": "Acme Video - LinkedIn", "link": "https://eg.linkedin.com/company/acme-video/about/?trk=test"}],
+            [{"title": "Acme Video - LinkedIn", "link": "https://eg.linkedin.com/company/acme-video/about/?trk=test", "snippet": "Headquarters: Alexandria, Egypt"}],
         ]
         leads = search_linkedin_companies("Video Editing", "Alexandria, Egypt", 10, 20, "key")
         self.assertEqual([lead["name"] for lead in leads], ["Acme Video"])
@@ -65,8 +66,8 @@ class SourceContractTests(unittest.TestCase):
             {"title": "Acme", "link": "https://linkedin.com.evil.example/company/acme"},
             {"title": "Acme", "link": "https://linkedin.com/company/acme/posts/123"},
             {"title": "Acme", "link": "https://youtube.com/company/acme"},
-            {"title": "Acme", "link": "https://linkedin.com/company/acme"},
-            {"title": "Acme", "link": "https://linkedin.com/company/acme?trk=duplicate"},
+            {"title": "Acme", "link": "https://linkedin.com/company/acme", "snippet": "Headquarters: Alexandria, Egypt"},
+            {"title": "Acme", "link": "https://linkedin.com/company/acme?trk=duplicate", "snippet": "Headquarters: Alexandria, Egypt"},
         ]
         leads = search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="key")
         self.assertEqual(len(leads), 1)

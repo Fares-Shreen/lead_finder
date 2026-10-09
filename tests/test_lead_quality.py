@@ -55,6 +55,7 @@ class LeadQualityTests(unittest.TestCase):
             "source_url": "https://linkedin.com/company/acme",
             "linkedin": "https://linkedin.com/company/acme",
             "website": "https://youtube.com/@acme",
+            "snippet": "Headquarters: Alexandria, Egypt",
         })
         self.assertEqual(reason, "")
         self.assertEqual(lead["website"], "")
