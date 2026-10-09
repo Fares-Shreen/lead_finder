@@ -1,7 +1,10 @@
 import requests
 from urllib.parse import quote_plus
+from config import SERPAPI_KEY
+from lead_quality import is_valid_source_url
 
 def search_google_maps(field, location, num_results, start=0, api_key=None):
+    api_key = api_key or SERPAPI_KEY
     if not api_key: raise Exception("No SerpApi key provided.")
     
     query = f"{field} in {location}"
@@ -27,7 +30,7 @@ def search_google_maps(field, location, num_results, start=0, api_key=None):
             links = item.get("links", {}) or {}
             website = item.get("website", "") or links.get("website", "")
             source_url = item.get("link", "") or links.get("directions", "")
-            if not source_url:
+            if not is_valid_source_url("Google Maps", source_url):
                 # A raw place_id is not clickable. A Maps search URL remains useful
                 # across both the CID and ChIJ variants returned by SerpApi.
                 source_url = (

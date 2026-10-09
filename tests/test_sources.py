@@ -4,10 +4,12 @@ from unittest.mock import Mock, patch
 from sources.google_maps import search_google_maps
 from sources.indeed import search_indeed
 from sources.wuzzuf import search_wuzzuf
+from sources.linkedin import search_linkedin_companies
 
 
 def response(payload):
     result = Mock()
+    result.status_code = 200
     result.json.return_value = payload
     return result
 
@@ -25,7 +27,7 @@ class SourceContractTests(unittest.TestCase):
         self.assertTrue(lead["source_url"].startswith("https://www.google.com/maps/search/"))
         self.assertNotEqual(lead["source_url"], "123456789")
 
-    @patch("sources.wuzzuf.requests.get")
+    @patch("sources.serpapi_search.requests.get")
     def test_wuzzuf_keeps_profiles_and_drops_job_pages(self, get):
         get.return_value = response({"organic_results": [
             {"title": "Jobs and Careers at Acme in Egypt", "link": "https://wuzzuf.net/jobs/careers/Acme-Egypt-1"},
@@ -34,7 +36,7 @@ class SourceContractTests(unittest.TestCase):
         leads = search_wuzzuf("Software", "Alexandria, Egypt", 10, api_key="key")
         self.assertEqual([lead["name"] for lead in leads], ["Acme"])
 
-    @patch("sources.indeed.requests.get")
+    @patch("sources.serpapi_search.requests.get")
     def test_indeed_keeps_employer_profiles_and_drops_search_pages(self, get):
         get.return_value = response({"organic_results": [
             {"title": "Working at Acme: Reviews", "link": "https://eg.indeed.com/cmp/Acme"},
@@ -42,6 +44,48 @@ class SourceContractTests(unittest.TestCase):
         ]})
         leads = search_indeed("Software", "Alexandria, Egypt", 10, api_key="key")
         self.assertEqual([lead["name"] for lead in leads], ["Acme"])
+
+    @patch("sources.company_profiles._search")
+    def test_linkedin_falls_back_after_no_company_profiles(self, search):
+        search.side_effect = [
+            [{"title": "Developer", "link": "https://linkedin.com/jobs/view/123"}],
+            [{"title": "Acme Video - LinkedIn", "link": "https://eg.linkedin.com/company/acme-video/about/?trk=test"}],
+        ]
+        leads = search_linkedin_companies("Video Editing", "Alexandria, Egypt", 10, 20, "key")
+        self.assertEqual([lead["name"] for lead in leads], ["Acme Video"])
+        self.assertEqual(leads[0]["linkedin"], "https://eg.linkedin.com/company/acme-video")
+        self.assertEqual(search.call_count, 2)
+        for call in search.call_args_list:
+            self.assertNotIn('"Alexandria, Egypt"', call.args[0])
+            self.assertEqual(call.kwargs["start"], 20)
+
+    @patch("sources.company_profiles._search")
+    def test_profile_search_drops_spoofed_domains_posts_and_home_page(self, search):
+        search.return_value = [
+            {"title": "Acme", "link": "https://linkedin.com.evil.example/company/acme"},
+            {"title": "Acme", "link": "https://linkedin.com/company/acme/posts/123"},
+            {"title": "Acme", "link": "https://youtube.com/company/acme"},
+            {"title": "Acme", "link": "https://linkedin.com/company/acme"},
+            {"title": "Acme", "link": "https://linkedin.com/company/acme?trk=duplicate"},
+        ]
+        leads = search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="key")
+        self.assertEqual(len(leads), 1)
+        self.assertEqual(leads[0]["linkedin"], "https://linkedin.com/company/acme")
+
+    @patch("sources.serpapi_search.requests.get")
+    def test_api_error_is_reported_instead_of_empty_companies(self, get):
+        get.return_value = response({"error": "Monthly quota exceeded"})
+        with self.assertRaisesRegex(RuntimeError, "Monthly quota exceeded"):
+            search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="key")
+        self.assertEqual(get.call_count, 1)
+
+    @patch("sources.serpapi_search.requests.get")
+    def test_http_auth_error_keeps_provider_message_without_exposing_key(self, get):
+        get.return_value = response({"error": "Invalid API key private-key"})
+        get.return_value.status_code = 401
+        with self.assertRaisesRegex(RuntimeError, "Invalid API key") as caught:
+            search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="private-key")
+        self.assertNotIn("private-key", str(caught.exception))
 
 
 if __name__ == "__main__":

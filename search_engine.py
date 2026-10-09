@@ -1,4 +1,5 @@
 import concurrent.futures
+from collections import Counter
 import requests
 from urllib.parse import urlparse, quote
 
@@ -39,6 +40,8 @@ def podio_api_precheck(company_name: str) -> bool:
         return True 
 
 def process(field, location, sources, num_per_source, progress_cb=None, api_key=None, podio_email=None, podio_password=None, function_type="IGT", created_by=""):
+    if not sources:
+        return [], []
     raw_candidates = []
     
     if progress_cb: progress_cb("📥 Launching SerpApi scrapers simultaneously...")
@@ -68,30 +71,43 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
 
     filtered_candidates = []
     rejected_by_quality = 0
+    duplicate_count = 0
+    existing_suspect_count = 0
+    rejection_reasons = Counter()
     seen_names = set()
     seen_domains = set()
 
     for lead in raw_candidates:
-        lead, _ = sanitize_lead(lead)
+        lead, reason = sanitize_lead(lead)
         if not lead:
             rejected_by_quality += 1
+            rejection_reasons[reason] += 1
             continue
         c_name = lead["name"].strip()
         c_lower = c_name.lower()
-        if c_lower in seen_names or dedupe.company_exists(c_name) or dedupe.is_suspect(c_name):
+        if c_lower in seen_names or dedupe.company_exists(c_name):
+            duplicate_count += 1
+            continue
+        if dedupe.is_suspect(c_name):
+            existing_suspect_count += 1
             continue
         domain = ""
         if lead.get("website"):
             parsed = urlparse(lead["website"])
             domain = parsed.netloc.replace("www.", "").lower()
-            if domain in seen_domains: continue
+            if domain in seen_domains:
+                duplicate_count += 1
+                continue
                 
         seen_names.add(c_lower)
         if domain: seen_domains.add(domain)
         filtered_candidates.append(lead)
 
     if progress_cb and rejected_by_quality:
-        progress_cb(f"🧹 Removed {rejected_by_quality} irrelevant or non-company results.")
+        details = ", ".join(f"{reason}: {count}" for reason, count in rejection_reasons.items())
+        progress_cb(f"🧹 Removed {rejected_by_quality} results ({details}).")
+    if progress_cb:
+        progress_cb(f"📋 {len(filtered_candidates)} new companies | {duplicate_count} already saved/duplicate | {existing_suspect_count} already awaiting Podio check.")
 
     if progress_cb: progress_cb(f"✨ Deeply enriching {len(filtered_candidates)} candidates upfront...")
     

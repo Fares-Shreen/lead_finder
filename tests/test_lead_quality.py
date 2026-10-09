@@ -24,6 +24,17 @@ class LeadQualityTests(unittest.TestCase):
     def test_accepts_company_owned_website(self):
         self.assertTrue(is_useful_company_website("https://example-company.com/about"))
 
+    def test_accepts_video_and_watch_business_names(self):
+        self.assertTrue(is_useful_company_name("Video Bus Egypt"))
+        self.assertTrue(is_useful_company_name("Acme Watch Company"))
+
+    def test_rejects_non_urls_and_non_company_profile_paths(self):
+        for value in ("ChIJ123", "javascript:alert(1)", "mailto:info@example.com", "not a url"):
+            self.assertEqual(normalize_url(value), "")
+        self.assertFalse(is_valid_source_url("Wuzzuf", "https://wuzzuf.net/jobs/careers/Home"))
+        self.assertFalse(is_valid_source_url("LinkedIn", "https://linkedin.com/company/"))
+        self.assertFalse(is_valid_source_url("Indeed", "https://indeed.com/cmp/acme/reviews/article"))
+
     def test_unwraps_google_redirect(self):
         wrapped = "https://www.google.com/url?q=https%3A%2F%2Facme.example%2Fabout&sa=U"
         self.assertEqual(normalize_url(wrapped), "https://acme.example/about")

@@ -61,7 +61,12 @@ if "user_email" not in st.session_state: st.session_state.user_email = ""
 if "user_function" not in st.session_state: st.session_state.user_function = ""
 if "is_admin" not in st.session_state: st.session_state.is_admin = False
 
-if "serpapi_key" not in st.session_state: st.session_state.serpapi_key = config.SERPAPI_KEY or ""
+if "serpapi_key" not in st.session_state:
+    try:
+        server_api_key = st.secrets.get("SERPAPI_KEY", "")
+    except FileNotFoundError:
+        server_api_key = ""
+    st.session_state.serpapi_key = config.SERPAPI_KEY or server_api_key or ""
 if "podio_email" not in st.session_state: st.session_state.podio_email = os.environ.get("PODIO_EMAIL", "")
 if "podio_password" not in st.session_state: st.session_state.podio_password = os.environ.get("PODIO_PASSWORD", "")
 if "auto_run_active" not in st.session_state: st.session_state.auto_run_active = False
@@ -307,7 +312,8 @@ with tab_search:
         ["Google Maps", "LinkedIn", "Yellow Pages", "Wuzzuf", "Indeed"],
         default=["Google Maps", "LinkedIn", "Wuzzuf", "Indeed"]
     )
-    num_per_source = st.slider("Results per source (per field)", 10, 100, 100, step=10)
+    num_per_source = st.slider("Maximum companies per source (per field)", 10, 100, 20, step=10)
+    st.caption("Each run searches one result page per source, with a fallback when no company profiles are found. The number of companies can be lower than the limit. Use Restart to revisit the first page; saved companies are skipped.")
     restart = st.checkbox("Start this field + location over from the beginning", value=False)
 
     col_btn_once, col_btn_auto = st.columns(2)
@@ -335,8 +341,8 @@ with tab_search:
     should_run = run_once_clicked or st.session_state.auto_run_active
 
     if should_run:
-        if not fields_to_search or not sources:
-            st.warning("⚠️ Please select fields and sources.")
+        if not fields_to_search or not sources or not location.strip() or not st.session_state.serpapi_key.strip():
+            st.warning("⚠️ Please select fields and sources, enter a location, and provide a SerpApi key.")
             st.session_state.auto_run_active = False
         else:
             if restart and not st.session_state.auto_run_active:
@@ -362,6 +368,19 @@ with tab_search:
                     )
                     total_clean += len(clean_leads)
                     total_suspects += len(suspect_leads)
+                    discovered_companies = clean_leads + suspect_leads
+                    if discovered_companies:
+                        st.dataframe(
+                            pd.DataFrame(discovered_companies)[["name", "source", "website", "linkedin", "source_url"]],
+                            column_config={
+                                "name": "Company",
+                                "website": st.column_config.LinkColumn("Website"),
+                                "linkedin": st.column_config.LinkColumn("LinkedIn"),
+                                "source_url": st.column_config.LinkColumn("Company profile"),
+                            },
+                            hide_index=True,
+                            use_container_width=True,
+                        )
             
             st.success(f"Cycle Complete! ✅ {total_clean} new leads saved to DB. 🕵️ {total_suspects} suspects routed to Manual Check.")
 

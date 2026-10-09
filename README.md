@@ -38,6 +38,11 @@ Opens a page with 3 inputs — **Field**, **Location**, **Sources** — plus a
   posts, articles, list pages, job-search pages, and malformed links before a
   lead can be enriched or saved. It also requires LinkedIn/Wuzzuf/Indeed/
   Yellow Pages results to point to real company-profile pages.
+- `sources/company_profiles.py` — shared company discovery for LinkedIn,
+  Yellow Pages, Wuzzuf, Indeed, and Clutch. Queries use separate city/country
+  terms and try a city-only fallback when the first query produces no valid
+  companies. LinkedIn also tries the Egyptian subdomain. Known profile tabs
+  are converted to the main company URL and duplicate profile URLs are merged.
 - `extractor.py` — visits a company's own website and its contact page to
   pull emails, phone numbers, and a LinkedIn link with regex/HTML parsing.
 - `dedupe.py` — the "have we seen this company before?" check. **Today
@@ -48,6 +53,22 @@ Opens a page with 3 inputs — **Field**, **Location**, **Sources** — plus a
 - `excel_writer.py` — appends only genuinely new companies to the sheet.
 - `search_engine.py` — the orchestrator: runs sources in parallel threads,
   dedupes, enriches only the new ones in parallel, writes Excel.
+
+### Search troubleshooting
+
+The search screen shows newly discovered companies with clickable profile
+links, including companies awaiting Podio review. The progress log separately
+counts rejected results, duplicates, and companies already awaiting review.
+LinkedIn discovers publicly indexed company pages through SerpApi; it does
+not require a LinkedIn login. API errors are reported rather than treated as
+an empty list of companies.
+
+If previous searches advanced far into the results, select **Start this field
++ location over from the beginning** and run once to retry the first page with
+the updated queries. Existing saved companies are still skipped. The maximum
+companies setting is a cap for the page, not a promise of that many companies.
+Fallback queries only run when a query returns no valid company profiles;
+each additional query can consume another SerpApi search.
 
 ## Deploying for your team (GitHub → Streamlit Community Cloud)
 

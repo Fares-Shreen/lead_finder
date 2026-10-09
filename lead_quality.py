@@ -26,7 +26,7 @@ NOISY_NAME_PATTERNS = (
     re.compile(r"\b(?:top|best)\s+\d+\b", re.I),
     re.compile(r"\b\d+\s+(?:top|best)\b", re.I),
     re.compile(r"\b(?:list of|companies in|jobs? in|job vacancies|search results)\b", re.I),
-    re.compile(r"\b(?:watch|video|playlist)\b", re.I),
+    re.compile(r"\b(?:watch (?:on|now)|official video|youtube playlist)\b", re.I),
 )
 
 
@@ -46,13 +46,17 @@ def normalize_url(value) -> str:
     value = str(value).strip()
     if not value:
         return ""
+    if re.match(r"^[a-z][a-z0-9+.-]*:", value, re.I) and not re.match(r"^https?://", value, re.I):
+        return ""
     if not re.match(r"^https?://", value, re.I):
         value = "https://" + value
     try:
         parsed = urlparse(value)
     except ValueError:
         return ""
-    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+    if (parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname
+            or "." not in parsed.hostname or re.search(r"\s", parsed.netloc)
+            or parsed.username or parsed.password):
         return ""
 
     # Google occasionally wraps an organic result in /url?q=<real URL>.
@@ -92,15 +96,17 @@ def is_valid_source_url(source: str, url: str) -> bool:
     if source == "google maps":
         return _domain_matches(host, "google.com") and path.startswith("/maps")
     if source == "linkedin":
-        return _domain_matches(host, "linkedin.com") and path.startswith("/company/")
-    if source == "yellow pages":
-        return _domain_matches(host, "yellowpages.com.eg") and "/profile" in path
+        return _domain_matches(host, "linkedin.com") and bool(re.fullmatch(r"/company/[^/]+/?", path))
+    if source in {"yellow pages", "yellow pages egypt"}:
+        return _domain_matches(host, "yellowpages.com.eg") and bool(re.search(r"/(?:en/|ar/)?profile/[^/]+", path))
     if source == "wuzzuf":
-        return _domain_matches(host, "wuzzuf.net") and path.startswith("/jobs/careers/")
+        return (_domain_matches(host, "wuzzuf.net")
+                and bool(re.fullmatch(r"/jobs/careers/[^/]+/?", path))
+                and path.rstrip("/").split("/")[-1] != "home")
     if source == "indeed":
-        return _domain_matches(host, "indeed.com") and path.startswith("/cmp/") and len(path) > 5
+        return _domain_matches(host, "indeed.com") and bool(re.fullmatch(r"/cmp/[^/]+/?", path))
     if source == "clutch":
-        return _domain_matches(host, "clutch.co") and path.startswith("/profile/")
+        return _domain_matches(host, "clutch.co") and bool(re.fullmatch(r"/profile/[^/]+/?", path))
     if source == "google":
         return is_useful_company_website(clean)
     return False

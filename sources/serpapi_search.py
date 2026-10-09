@@ -20,7 +20,6 @@ searches — or just lean on Yellow Pages + Clutch, which need no API key
 and have no cap at all.
 """
 import requests
-from urllib.parse import urlparse
 
 from config import SERPAPI_KEY, REQUEST_TIMEOUT
 from lead_quality import is_useful_company_name, is_useful_company_website, normalize_url
@@ -31,22 +30,25 @@ ENDPOINT = "https://serpapi.com/search"
 def _search(query, num=10, start=0, api_key=None):
     key = api_key or SERPAPI_KEY
     if not key:
-        return []
+        raise ValueError("SerpApi API key is missing. Enter your key in the sidebar.")
     params = {
         "engine": "google",
         "q": query,
         "api_key": key,
-        "num": min(num, 50),  # SerpApi/Google results reliably thin out past ~50-100
+        "num": min(num, 50),  # A limit, not a guarantee of this many results.
         "start": start,  # pagination offset, in units of 10 (Google convention)
     }
     try:
         r = requests.get(ENDPOINT, params=params, timeout=REQUEST_TIMEOUT)
-        r.raise_for_status()
         data = r.json()
     except requests.RequestException:
-        return []
+        raise RuntimeError("SerpApi request failed. Check your connection and API key.") from None
+    except ValueError:
+        raise RuntimeError("SerpApi returned an invalid JSON response.") from None
     if "error" in data:
-        return []
+        raise RuntimeError(f"SerpApi: {str(data['error']).replace(key, '[redacted]')}")
+    if r.status_code >= 400:
+        raise RuntimeError(f"SerpApi returned HTTP {r.status_code}.")
     return data.get("organic_results", [])[:num]
 
 
@@ -77,21 +79,5 @@ def search_google_companies(field, location, num=10, start=0, api_key=None):
 
 def search_linkedin_companies(field, location, num=10, start=0, api_key=None):
     """Find LinkedIn company pages for field+location via site: search."""
-    query = f'site:linkedin.com/company {field} {location}'
-    items = _search(query, num=num, start=start, api_key=api_key)
-    results = []
-    for it in items:
-        title = it.get("title", "")
-        name = title.split(" | ")[0].split(" - LinkedIn")[0].strip()
-        link = normalize_url(it.get("link"))
-        if "/company/" not in urlparse(link).path.lower():
-            continue
-        results.append({
-            "name": name,
-            "website": None,
-            "linkedin": link,
-            "source_url": link,
-            "snippet": it.get("snippet", ""),
-            "source": "LinkedIn",
-        })
-    return results
+    from sources.company_profiles import search_company_profiles
+    return search_company_profiles("LinkedIn", field, location, num, start, api_key)
