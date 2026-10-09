@@ -4,7 +4,7 @@ import pandas as pd
 
 DISCOVERY_COLUMNS = [
     "name", "location", "location_evidence", "source",
-    "website", "linkedin", "source_url",
+    "website", "linkedin", "source_url", "podio_check_status",
 ]
 
 

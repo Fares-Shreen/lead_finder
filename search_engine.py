@@ -1,7 +1,7 @@
 import concurrent.futures
 from collections import Counter
-import requests
-from urllib.parse import urlparse, quote
+from urllib.parse import urlparse
+from podio_check import check_podio
 
 from sources.linkedin import search_linkedin_companies
 from sources.yellowpages_eg import search_yellowpages
@@ -23,25 +23,17 @@ SOURCE_FUNCS = {
 
 OFFSET_STEP = { "Google Maps": 5, "LinkedIn": 10, "Yellow Pages": 10, "Wuzzuf": 10, "Indeed": 10 }
 
-def podio_api_precheck(company_name: str) -> bool:
-    if not company_name: return False
-    query = quote(company_name.strip())
-    url = f"https://podio.com/webforms/25879454/1936053/items_search?field_id=238040132&query={query}&limit=50"
-    try:
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            if not data: return False
-            if isinstance(data, list) and len(data) > 0:
-                first_item = data[0]
-                if first_item.get("name") == "app" and len(first_item.get("contents", [])) > 0:
-                    return True 
-        return False 
-    except Exception:
-        return True 
+def podio_api_precheck(company_name: str):
+    """True = exact match, False = no match, None = check unavailable."""
+    result = check_podio(company_name)
+    if result["status"] == "unknown":
+        return None
+    return result["exists"]
 
-def process(field, location, sources, num_per_source, progress_cb=None, api_key=None, podio_email=None, podio_password=None, function_type="IGT", created_by=""):
+def process(field, location, sources, num_per_source, progress_cb=None, api_key=None, podio_email=None, podio_password=None, function_type="IGT", created_by="", run_report=None):
     location = TARGET_LOCATION
+    report = run_report if run_report is not None else {}
+    report.update(source_errors={}, source_counts={}, podio_matches=0, podio_unavailable=0)
     if not sources:
         return [], []
     raw_candidates = []
@@ -61,9 +53,11 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
         for future in concurrent.futures.as_completed(futures):
             source_name, results, error = future.result()
             if error:
+                report["source_errors"][source_name] = error
                 if progress_cb: progress_cb(f"❌ Error in {source_name}: {error}")
             else:
-                if progress_cb: progress_cb(f"✅ {source_name}: Found {len(results)} raw leads.")
+                report["source_counts"][source_name] = len(results)
+                if progress_cb: progress_cb(f"✅ {source_name}: Found {len(results)} location-qualified company profiles.")
                 for r in results:
                     r["field"] = field
                     r["function_type"] = function_type
@@ -110,6 +104,15 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
     if progress_cb:
         progress_cb(f"📋 {len(filtered_candidates)} new companies | {duplicate_count} already saved/duplicate | {existing_suspect_count} already awaiting Podio check.")
 
+    if not filtered_candidates:
+        if progress_cb:
+            progress_cb("ℹ️ No new location-qualified companies on this round.")
+            if report["source_errors"]:
+                progress_cb("⚠️ Failed sources are incomplete, not empty. Their result pages were not advanced.")
+        dedupe.log_search(field, location, sources, num_per_source, api_key)
+        dedupe.sync_to_google_sheets()
+        return [], []
+
     if progress_cb: progress_cb(f"✨ Deeply enriching {len(filtered_candidates)} candidates upfront...")
     
     fully_enriched_candidates = []
@@ -137,12 +140,23 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
     suspects_for_later = []
     
     for lead in fully_enriched_candidates:
-        if podio_api_precheck(lead["name"]):
+        podio_result = podio_api_precheck(lead["name"])
+        if podio_result is None:
+            lead["podio_check_status"] = "unavailable"
+            lead["podio_check_reason"] = "Podio check unavailable or response unreadable; duplicate status unknown."
+            report["podio_unavailable"] += 1
+            suspects_for_later.append(lead)
+        elif podio_result:
+            lead["podio_check_status"] = "exact_match"
+            lead["podio_check_reason"] = "Exact company-name match found in Podio."
+            report["podio_matches"] += 1
             suspects_for_later.append(lead)
         else:
+            lead["podio_check_status"] = "no_match"
             definitely_new.append(lead)
 
-    if progress_cb: progress_cb(f"✅ Safe: {len(definitely_new)} | 🕵️ Suspects: {len(suspects_for_later)}")
+    if progress_cb:
+        progress_cb(f"✅ No Podio match: {len(definitely_new)} | Exact matches: {report['podio_matches']} | Check unavailable: {report['podio_unavailable']}")
 
     for lead in definitely_new:
         dedupe.add_company(lead)

@@ -113,6 +113,27 @@ class SourceContractTests(unittest.TestCase):
             search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="private-key")
         self.assertEqual(get.call_count, 2)
 
+    @patch("sources.serpapi_search.time.sleep")
+    @patch("sources.serpapi_search.requests.get")
+    def test_async_search_polls_existing_id_instead_of_new_search(self, get, sleep):
+        get.side_effect = [
+            response({"search_metadata": {"id": "search-123", "status": "Processing"}}),
+            response({"search_metadata": {"id": "search-123", "status": "Success"}, "organic_results": [
+                {"title": "Acme | LinkedIn", "link": "https://linkedin.com/company/acme", "snippet": "Headquarters: Alexandria, Egypt"},
+            ]}),
+        ]
+        leads = search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="key")
+        self.assertEqual([lead["name"] for lead in leads], ["Acme"])
+        self.assertEqual(get.call_args_list[1].args[0], "https://serpapi.com/searches/search-123.json")
+        self.assertNotIn("q", get.call_args_list[1].kwargs["params"])
+
+    @patch("sources.serpapi_search.time.monotonic", side_effect=[0, 100])
+    @patch("sources.serpapi_search.requests.get")
+    def test_processing_search_is_not_treated_as_empty(self, get, clock):
+        get.return_value = response({"search_metadata": {"id": "search-123", "status": "Queued"}})
+        with self.assertRaisesRegex(RuntimeError, "still processing"):
+            search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="key")
+
 
 if __name__ == "__main__":
     unittest.main()

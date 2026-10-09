@@ -24,6 +24,8 @@ import os
 
 # --- SerpApi (covers general web search + LinkedIn company pages) ---
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY", "")
+SERPAPI_ASYNC = os.environ.get("SERPAPI_ASYNC", "true").lower() in {"true", "1", "yes"}
+SERPAPI_POLL_TIMEOUT = 90
 
 # --- Admin panel (remove companies, confirmed list, usage dashboard) -----
 # SECURITY NOTE: the default below is a plaintext fallback so the app

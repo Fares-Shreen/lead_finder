@@ -20,31 +20,23 @@ searches — or just lean on Yellow Pages + Clutch, which need no API key
 and have no cap at all.
 """
 import requests
+import re
+import time
 
-from config import SERPAPI_KEY, REQUEST_TIMEOUT
+from config import SERPAPI_KEY, REQUEST_TIMEOUT, SERPAPI_ASYNC, SERPAPI_POLL_TIMEOUT
 from lead_quality import is_useful_company_name, is_useful_company_website, normalize_url, sanitize_lead
 from company_location import TARGET_LOCATION
 
 ENDPOINT = "https://serpapi.com/search"
 
 
-def _search(query, num=10, start=0, api_key=None):
-    key = api_key or SERPAPI_KEY
-    if not key:
-        raise ValueError("SerpApi API key is missing. Enter your key in the sidebar.")
-    params = {
-        "engine": "google",
-        "q": query,
-        "api_key": key,
-        "num": min(num, 50),  # A limit, not a guarantee of this many results.
-        "start": start,  # pagination offset, in units of 10 (Google convention)
-    }
+def _request_json(url, params, key):
     # The previous 12-second deadline can expire while SerpApi builds a search.
     # Retry transient transport/server failures once, never authentication/quota
     # errors. Never include exception text: request URLs contain the API key.
     for attempt in range(2):
         try:
-            r = requests.get(ENDPOINT, params=params, timeout=(5, max(30, REQUEST_TIMEOUT)))
+            r = requests.get(url, params=params, timeout=(5, max(30, REQUEST_TIMEOUT)))
         except requests.exceptions.SSLError:
             raise RuntimeError("SerpApi TLS certificate verification failed.") from None
         except requests.Timeout:
@@ -70,6 +62,31 @@ def _search(query, num=10, start=0, api_key=None):
         raise RuntimeError(f"SerpApi: {str(data['error']).replace(key, '[redacted]')}")
     if r.status_code >= 400:
         raise RuntimeError(f"SerpApi returned HTTP {r.status_code}.")
+    return data
+
+
+def _search(query, num=10, start=0, api_key=None):
+    key = api_key or SERPAPI_KEY
+    if not key:
+        raise ValueError("SerpApi API key is missing. Enter your key in the sidebar.")
+    params = {
+        "engine": "google", "q": query, "api_key": key,
+        "num": min(num, 50), "start": start,
+    }
+    if SERPAPI_ASYNC:
+        params["async"] = "true"
+    data = _request_json(ENDPOINT, params, key)
+    search_id = (data.get("search_metadata") or {}).get("id", "")
+    deadline = time.monotonic() + SERPAPI_POLL_TIMEOUT
+    while (data.get("search_metadata") or {}).get("status") in {"Queued", "Processing"}:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", str(search_id)):
+            raise RuntimeError("SerpApi queued a search without a usable search ID.")
+        if time.monotonic() >= deadline:
+            raise RuntimeError("SerpApi search is still processing. This page was not advanced; retry later.")
+        time.sleep(3)
+        data = _request_json(f"https://serpapi.com/searches/{search_id}.json", {"api_key": key}, key)
+    if (data.get("search_metadata") or {}).get("status") == "Error":
+        raise RuntimeError("SerpApi search failed while processing.")
     return data.get("organic_results", [])[:num]
 
 

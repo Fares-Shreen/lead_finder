@@ -44,7 +44,9 @@ def raw_podio_response(company_name: str):
 
 def check_podio(company_name: str):
     """
-    Returns {"exists": bool, "matched_title": str|None, "link": str|None}.
+    Returns exists, matched_title, link, and status (match/no_match/unknown).
+    Unknown means the request failed or its response could not be interpreted;
+    callers must not treat it as proof of a duplicate or a completed check.
 
     IMPORTANT: `exists` is only True when one of Podio's returned item
     titles EXACTLY matches company_name (case-insensitive, whitespace-
@@ -56,7 +58,7 @@ def check_podio(company_name: str):
     tangentially similar. Only an exact title match counts as a real
     duplicate; a merely similar result does not block adding the company.
     """
-    result = {"exists": False, "matched_title": None, "link": None}
+    result = {"exists": False, "matched_title": None, "link": None, "status": "unknown"}
     if not company_name or not company_name.strip():
         return result
 
@@ -64,19 +66,25 @@ def check_podio(company_name: str):
     if not isinstance(data, list):
         return result
 
-    target = company_name.strip().lower()
+    target = " ".join(company_name.casefold().split())
+    malformed = False
     for app_entry in data:
-        if not isinstance(app_entry, dict):
+        if not isinstance(app_entry, dict) or not isinstance(app_entry.get("contents"), list):
+            malformed = True
             continue
         for item in app_entry.get("contents", []):
-            if not isinstance(item, dict):
+            if not isinstance(item, dict) or not isinstance(item.get("title"), str) or not item["title"].strip():
+                malformed = True
                 continue
-            title = (item.get("title") or "").strip().lower()
+            title = " ".join(item["title"].casefold().split())
             if title == target:
                 result["exists"] = True
+                result["status"] = "match"
                 result["matched_title"] = item.get("title")
                 result["link"] = item.get("link")
                 return result
+    if not malformed:
+        result["status"] = "no_match"
     return result
 
 

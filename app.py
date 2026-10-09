@@ -358,16 +358,23 @@ with tab_search:
                 st.info(f"🔄 **Auto-Run Active — Cycle #{st.session_state.auto_run_cycle}** (Offsets advancing)")
 
             total_clean, total_suspects = 0, 0
+            source_errors = {}
             for current_field in fields_to_search:
                 with st.spinner(f"Running pipeline for {current_field}..."):
+                    progress_cb(f"🔎 Field: {current_field} | Required location: Alexandria, Egypt")
+                    run_report = {}
                     clean_leads, suspect_leads = process(
                         current_field, location, sources, num_per_source, progress_cb,
                         api_key=st.session_state.serpapi_key or None,
                         podio_email=st.session_state.podio_email or None,
                         podio_password=st.session_state.podio_password or None,
                         function_type=assigned_function,
-                        created_by=st.session_state.user_email
+                        created_by=st.session_state.user_email,
+                        run_report=run_report,
                     )
+                    source_errors.update(run_report["source_errors"])
+                    if run_report["podio_unavailable"]:
+                        st.warning(f"Podio could not check {run_report['podio_unavailable']} companies. They remain in Manual Check with duplicate status unknown.")
                     total_clean += len(clean_leads)
                     total_suspects += len(suspect_leads)
                     discovered_companies = clean_leads + suspect_leads
@@ -383,16 +390,23 @@ with tab_search:
                                 "website": st.column_config.LinkColumn("Website"),
                                 "linkedin": st.column_config.LinkColumn("LinkedIn"),
                                 "source_url": st.column_config.LinkColumn("Company profile"),
+                                "podio_check_status": "Podio check",
                             },
                             hide_index=True,
                             use_container_width=True,
                         )
             
-            st.success(f"Cycle Complete! ✅ {total_clean} new leads saved to DB. 🕵️ {total_suspects} suspects routed to Manual Check.")
+            if source_errors:
+                st.warning(f"Search incomplete for: {', '.join(source_errors)}. Successful sources found {total_clean + total_suspects} new companies: {total_clean} saved, {total_suspects} awaiting Podio review. Failed sources keep their current page for retry.")
+            else:
+                st.success(f"Cycle Complete! ✅ {total_clean} new leads saved to DB. 🕵️ {total_suspects} companies routed to Manual Check.")
 
             if st.session_state.auto_run_active:
-                if total_clean == 0 and total_suspects == 0:
-                    st.warning("🏁 No more new results found across all sources. Auto-run stopped.")
+                if source_errors:
+                    st.warning("Auto-run paused because a source failed. Retry with Run Once after the service recovers.")
+                    st.session_state.auto_run_active = False
+                elif total_clean == 0 and total_suspects == 0:
+                    st.info("No new companies qualified on these result pages. Auto-run stopped; this does not prove all sources are exhausted.")
                     st.session_state.auto_run_active = False
                 else:
                     st.toast(f"Cycle #{st.session_state.auto_run_cycle} complete. Next round starting in 3 seconds...", icon="⏳")
@@ -404,7 +418,7 @@ with tab_search:
 # =========================================================================
 with tab_manual:
     st.markdown("### 🕵️ Need Podio Check Queue")
-    st.caption("These fully-enriched companies triggered a flag on the fast API. Run Playwright to verify them.")
+    st.caption("This queue contains exact Podio name matches and companies whose Podio check was unavailable. The status/reason identifies which; run the deep check to review them.")
     
     if st.session_state.is_admin:
         manual_assigned_function = st.selectbox("Assign Verified Suspects To:", ["IGT", "IGV", "B2B"], key="manual_func")

@@ -56,6 +56,19 @@ Opens a page with 3 inputs — **Field**, **Location**, **Sources** — plus a
 
 ### Search troubleshooting
 
+Directory searches submit asynchronously to SerpApi, then poll the returned
+search ID through the [Search Archive API](https://serpapi.com/search-archive-api).
+This avoids holding one HTTP connection open while Google results are built.
+Polling is bounded; unfinished/failed sources are reported as incomplete and
+keep their current page. Auto-run stops on a source error so it does not
+repeatedly retry an unavailable service. For accounts using SerpApi Ludicrous
+Speed (which does not support async), set `SERPAPI_ASYNC=false` in the environment.
+
+Podio checks distinguish exact company-name matches, successful checks with
+no match, and unavailable/unreadable checks. Only successful no-match checks
+go to the new-lead database. Matches and unavailable checks go to manual review
+with a status and reason; unrelated search hits are not treated as duplicates.
+
 Company discovery is restricted to **Alexandria, Egypt**. A Google Maps
 address must explicitly include the city and country. Directory/LinkedIn
 results need an explicit headquarters/address/location statement or a profile
