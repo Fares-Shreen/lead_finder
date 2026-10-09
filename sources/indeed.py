@@ -4,7 +4,7 @@ def search_indeed(field, location, num_results, start=0, api_key=None):
     if not api_key: raise Exception("No SerpApi key provided.")
     
     city = location.split(",")[0].strip()
-    query = f'{field} "{city}" (site:eg.indeed.com OR site:indeed.com/cmp)'
+    query = f'site:eg.indeed.com/cmp/ "{field}" "{city}"'
     
     params = {
         "engine": "google",
@@ -25,8 +25,8 @@ def search_indeed(field, location, num_results, start=0, api_key=None):
         title = item.get("title", "")
         link = item.get("link", "")
         
-        # Skip aggregate search pages
-        if "/q-" in link or "/jobs" in link:
+        # Keep employer profiles only, never job or search-result pages.
+        if "/cmp/" not in link.lower():
             continue
             
         company = title
@@ -46,7 +46,8 @@ def search_indeed(field, location, num_results, start=0, api_key=None):
                 "website": "",
                 "linkedin": "",
                 "source": "Indeed",
-                "source_url": link
+                "source_url": link,
+                "snippet": item.get("snippet", "")
             })
             
     return results

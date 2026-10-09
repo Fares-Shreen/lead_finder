@@ -1,7 +1,7 @@
 # Company Lead Finder
 
-Searches Google, LinkedIn, Yellow Pages Egypt and Clutch **in parallel** for
-companies in a given field + location, skips any company already saved
+Searches Google Maps, LinkedIn, Yellow Pages Egypt, Wuzzuf, and Indeed **in
+parallel** for companies in a given field + location, skips any company already saved
 (so nothing gets re-added or re-scraped), pulls email/phone/LinkedIn/website
 from the company's own site, and exports the new results to Excel.
 
@@ -32,9 +32,12 @@ Opens a page with 3 inputs — **Field**, **Location**, **Sources** — plus a
 (threaded), shows live progress, and gives you a downloadable `.xlsx`.
 
 ## How the pieces fit together
-- `sources/` — one file per directory (Google/LinkedIn via SerpApi,
-  Yellow Pages Egypt, Clutch) — each returns a plain
+- `sources/` — one file per directory (all current sources use SerpApi) — each returns a plain
   list of `{name, website/linkedin, source}` dicts.
+- `lead_quality.py` — the shared source contract. It rejects videos, social
+  posts, articles, list pages, job-search pages, and malformed links before a
+  lead can be enriched or saved. It also requires LinkedIn/Wuzzuf/Indeed/
+  Yellow Pages results to point to real company-profile pages.
 - `extractor.py` — visits a company's own website and its contact page to
   pull emails, phone numbers, and a LinkedIn link with regex/HTML parsing.
 - `dedupe.py` — the "have we seen this company before?" check. **Today

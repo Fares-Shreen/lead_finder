@@ -9,6 +9,7 @@ from sources.indeed import search_indeed
 from sources.google_maps import search_google_maps
 import dedupe
 import extractor
+from lead_quality import sanitize_lead
 
 SOURCE_FUNCS = {
     "Google Maps": search_google_maps,
@@ -66,10 +67,15 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
                     raw_candidates.append(r)
 
     filtered_candidates = []
+    rejected_by_quality = 0
     seen_names = set()
     seen_domains = set()
 
     for lead in raw_candidates:
+        lead, _ = sanitize_lead(lead)
+        if not lead:
+            rejected_by_quality += 1
+            continue
         c_name = lead["name"].strip()
         c_lower = c_name.lower()
         if c_lower in seen_names or dedupe.company_exists(c_name) or dedupe.is_suspect(c_name):
@@ -83,6 +89,9 @@ def process(field, location, sources, num_per_source, progress_cb=None, api_key=
         seen_names.add(c_lower)
         if domain: seen_domains.add(domain)
         filtered_candidates.append(lead)
+
+    if progress_cb and rejected_by_quality:
+        progress_cb(f"🧹 Removed {rejected_by_quality} irrelevant or non-company results.")
 
     if progress_cb: progress_cb(f"✨ Deeply enriching {len(filtered_candidates)} candidates upfront...")
     

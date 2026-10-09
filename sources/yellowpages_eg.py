@@ -4,7 +4,7 @@ def search_yellowpages(field, location, num_results, start=0, api_key=None):
     if not api_key: raise Exception("No SerpApi key provided.")
     
     city = location.split(",")[0].strip()
-    query = f'site:yellowpages.com.eg/en/profile {field} {city}'
+    query = f'site:yellowpages.com.eg/en/profile "{field}" "{city}"'
     params = {
         "engine": "google", 
         "q": query, 
@@ -23,6 +23,8 @@ def search_yellowpages(field, location, num_results, start=0, api_key=None):
     for item in data.get("organic_results", []):
         title = item.get("title", "")
         link = item.get("link", "")
+        if "yellowpages.com.eg" not in link.lower() or "/profile" not in link.lower():
+            continue
         company = title.split(" - ")[0].split(" | ")[0].strip()
         
         invalid_keywords = ["yellowpages", "profile", "category"]
@@ -34,7 +36,8 @@ def search_yellowpages(field, location, num_results, start=0, api_key=None):
                 "website": "",
                 "linkedin": "",
                 "source": "Yellow Pages",
-                "source_url": link
+                "source_url": link,
+                "snippet": item.get("snippet", "")
             })
             
     return results

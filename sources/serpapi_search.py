@@ -20,8 +20,10 @@ searches — or just lean on Yellow Pages + Clutch, which need no API key
 and have no cap at all.
 """
 import requests
+from urllib.parse import urlparse
 
 from config import SERPAPI_KEY, REQUEST_TIMEOUT
+from lead_quality import is_useful_company_name, is_useful_company_website, normalize_url
 
 ENDPOINT = "https://serpapi.com/search"
 
@@ -50,14 +52,23 @@ def _search(query, num=10, start=0, api_key=None):
 
 def search_google_companies(field, location, num=10, start=0, api_key=None):
     """General web search for companies matching field+location."""
-    query = f'{field} companies in {location} -site:linkedin.com'
+    query = (
+        f'"{field}" company in "{location}" '
+        '-site:linkedin.com -site:youtube.com -site:facebook.com '
+        '-site:instagram.com -site:tiktok.com -jobs -video'
+    )
     items = _search(query, num=num, start=start, api_key=api_key)
     results = []
     for it in items:
         title = it.get("title", "")
+        website = normalize_url(it.get("link"))
+        name = title.split(" - ")[0].split(" | ")[0].strip()
+        if not is_useful_company_name(name) or not is_useful_company_website(website):
+            continue
         results.append({
-            "name": title.split(" - ")[0].split(" | ")[0].strip(),
-            "website": it.get("link"),
+            "name": name,
+            "website": website,
+            "source_url": website,
             "snippet": it.get("snippet", ""),
             "source": "Google",
         })
@@ -72,10 +83,14 @@ def search_linkedin_companies(field, location, num=10, start=0, api_key=None):
     for it in items:
         title = it.get("title", "")
         name = title.split(" | ")[0].split(" - LinkedIn")[0].strip()
+        link = normalize_url(it.get("link"))
+        if "/company/" not in urlparse(link).path.lower():
+            continue
         results.append({
             "name": name,
             "website": None,
-            "linkedin": it.get("link"),
+            "linkedin": link,
+            "source_url": link,
             "snippet": it.get("snippet", ""),
             "source": "LinkedIn",
         })

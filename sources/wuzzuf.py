@@ -1,10 +1,11 @@
 import requests
+import re
 
 def search_wuzzuf(field, location, num_results, start=0, api_key=None):
     if not api_key: raise Exception("No SerpApi key provided.")
     
     city = location.split(",")[0].strip()
-    query = f'{field} "{city}" site:wuzzuf.net'
+    query = f'site:wuzzuf.net/jobs/careers/ "{field}" "{city}"'
     
     params = {
         "engine": "google",
@@ -25,18 +26,14 @@ def search_wuzzuf(field, location, num_results, start=0, api_key=None):
         title = item.get("title", "")
         link = item.get("link", "")
         
-        # Skip aggregate search pages (like "370 alexandria Jobs in Egypt")
-        if "/a/" in link or " Jobs in " in title:
+        # Keep only actual company profiles, never job or aggregate pages.
+        if "/jobs/careers/" not in link.lower():
             continue
             
-        company = title
-        
-        # Extract name if it says "job at TechCorp" or "Careers at TechCorp"
-        if " at " in title:
-            try:
-                company = title.split(" at ")[1].split(" in ")[0].strip()
-            except:
-                pass
+        match = re.search(r"(?:jobs? and )?careers at (.+?)(?: in | \||$)", title, re.I)
+        company = match.group(1).strip() if match else title
+        company = company.split(" Careers")[0].split(" careers")[0]
+        company = company.split(" | ")[0].split(" - ")[0].strip()
                 
         if company and len(company) < 55 and company.lower() not in seen:
             seen.add(company.lower())
@@ -45,7 +42,8 @@ def search_wuzzuf(field, location, num_results, start=0, api_key=None):
                 "website": "",
                 "linkedin": "",
                 "source": "Wuzzuf",
-                "source_url": link
+                "source_url": link,
+                "snippet": item.get("snippet", "")
             })
             
     return results

@@ -2,6 +2,8 @@
 Scrapes Clutch data via SerpApi (Google site: search).
 Bypasses Cloudflare bot detection entirely by leveraging Google search indexing.
 """
+import re
+
 from sources.serpapi_search import _search
 
 def search_clutch(field, location, num=10, start=0, api_key=None):
@@ -19,7 +21,9 @@ def search_clutch(field, location, num=10, start=0, api_key=None):
     for it in items:
         title = it.get("title", "")
         # Clean title: e.g. "TrianglZ Reviews | Clutch.co" -> "TrianglZ"
-        name = title.split(" - ")[0].split(" | ")[0].replace(" Reviews", "").strip()
+        name = re.sub(r"\s*\(\d+\),?\s*Pricing,.*$", "", title, flags=re.I)
+        name = name.split(" - ")[0].split(" | ")[0]
+        name = re.sub(r"\s+Reviews$", "", name, flags=re.I).strip()
         if not name or "clutch" in name.lower():
             continue
         

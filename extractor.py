@@ -16,10 +16,10 @@ EMAIL_RE = re.compile(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}")
 # - Mobiles: +20 10/11/12/15, 0020 1x, or 01x
 # - Landlines (Cairo/Alex/etc): +20 2/3, 02/03, 04x-09x
 PHONE_RE = re.compile(
-    r"(?:\+20|0020)?[\s\-]?\(?0?\)?(?:1[0125][\s\-]?\d{3}[\s\-]?\d{4}|(?:2|3|[4-9]\d)[\s\-]?\d{3,4}[\s\-]?\d{3,4})"
+    r"(?<!\d)(?:(?:\+20|0020)|0)[\s\-()]*(?:\d[\s\-()]*){8,10}(?!\d)"
 )
 
-LINKEDIN_RE = re.compile(r"https?://[\w.]*linkedin\.com/[^\s\"'<>]+", re.I)
+LINKEDIN_RE = re.compile(r"https?://[\w.]*linkedin\.com/company/[^\s\"'<>/?#]+", re.I)
 
 CONTACT_PATH_HINTS = ["contact", "contact-us", "contactus", "about", "about-us", "get-in-touch"]
 
@@ -40,7 +40,7 @@ def _clean_emails(raw_emails):
     for e in raw_emails:
         e = e.strip().strip(".,;:")
         domain = e.split("@")[-1].lower()
-        if domain in SKIP_EMAIL_DOMAINS or e.lower().endswith((".png", ".jpg", ".gif")):
+        if any(domain == blocked or domain.endswith("." + blocked) for blocked in SKIP_EMAIL_DOMAINS) or e.lower().endswith((".png", ".jpg", ".gif")):
             continue
         if e.lower() not in seen:
             seen.add(e.lower())
@@ -54,11 +54,17 @@ def _clean_phones(raw_phones):
     seen, out = set(), []
     for p in raw_phones:
         digits = re.sub(r"\D", "", p)
-        # Ensure it has at least 8 digits (standard Egyptian length)
-        if len(digits) < 8:
+        if digits.startswith("0020"):
+            digits = digits[2:]
+        national = "0" + digits[2:] if digits.startswith("20") else digits
+        is_mobile = bool(re.fullmatch(r"01[0125]\d{8}", national))
+        is_cairo = bool(re.fullmatch(r"02\d{8}", national))
+        is_alex = bool(re.fullmatch(r"03\d{7}", national))
+        is_other_landline = bool(re.fullmatch(r"0[4-9]\d{8}", national))
+        if not any((is_mobile, is_cairo, is_alex, is_other_landline)):
             continue
-        if digits not in seen:
-            seen.add(digits)
+        if national not in seen:
+            seen.add(national)
             out.append(p.strip())
     return out
 
