@@ -1,4 +1,5 @@
 import unittest
+import requests
 from unittest.mock import Mock, patch
 
 from sources.google_maps import search_google_maps
@@ -87,6 +88,30 @@ class SourceContractTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "Invalid API key") as caught:
             search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="private-key")
         self.assertNotIn("private-key", str(caught.exception))
+
+    @patch("sources.serpapi_search.requests.get")
+    def test_linkedin_recovers_from_transient_timeout(self, get):
+        get.side_effect = [requests.Timeout("secret request URL"), response({"organic_results": [
+            {"title": "Acme | LinkedIn", "link": "https://linkedin.com/company/acme", "snippet": "Headquarters: Alexandria, Egypt"},
+        ]})]
+        leads = search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="private-key")
+        self.assertEqual([lead["name"] for lead in leads], ["Acme"])
+        self.assertEqual(get.call_count, 2)
+
+    @patch("sources.serpapi_search.requests.get")
+    def test_persistent_timeout_is_reported_safely(self, get):
+        get.side_effect = requests.Timeout("https://serpapi.com?api_key=private-key")
+        with self.assertRaisesRegex(RuntimeError, "timed out after two attempts") as caught:
+            search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="private-key")
+        self.assertEqual(get.call_count, 2)
+        self.assertNotIn("private-key", str(caught.exception))
+
+    @patch("sources.serpapi_search.requests.get")
+    def test_connection_failure_is_distinct_from_auth_error(self, get):
+        get.side_effect = requests.ConnectionError("private-key")
+        with self.assertRaisesRegex(RuntimeError, "Unable to connect"):
+            search_linkedin_companies("Software", "Alexandria, Egypt", 10, api_key="private-key")
+        self.assertEqual(get.call_count, 2)
 
 
 if __name__ == "__main__":

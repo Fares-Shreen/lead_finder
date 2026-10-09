@@ -39,13 +39,33 @@ def _search(query, num=10, start=0, api_key=None):
         "num": min(num, 50),  # A limit, not a guarantee of this many results.
         "start": start,  # pagination offset, in units of 10 (Google convention)
     }
+    # The previous 12-second deadline can expire while SerpApi builds a search.
+    # Retry transient transport/server failures once, never authentication/quota
+    # errors. Never include exception text: request URLs contain the API key.
+    for attempt in range(2):
+        try:
+            r = requests.get(ENDPOINT, params=params, timeout=(5, max(30, REQUEST_TIMEOUT)))
+        except requests.exceptions.SSLError:
+            raise RuntimeError("SerpApi TLS certificate verification failed.") from None
+        except requests.Timeout:
+            if attempt == 0:
+                continue
+            raise RuntimeError("SerpApi timed out after two attempts. Try this source again shortly.") from None
+        except requests.ConnectionError:
+            if attempt == 0:
+                continue
+            raise RuntimeError("Unable to connect to SerpApi after two attempts. Check server network access.") from None
+        except requests.RequestException:
+            raise RuntimeError("SerpApi transport request failed.") from None
+        if r.status_code in {502, 503, 504} and attempt == 0:
+            continue
+        break
     try:
-        r = requests.get(ENDPOINT, params=params, timeout=REQUEST_TIMEOUT)
         data = r.json()
-    except requests.RequestException:
-        raise RuntimeError("SerpApi request failed. Check your connection and API key.") from None
     except ValueError:
-        raise RuntimeError("SerpApi returned an invalid JSON response.") from None
+        raise RuntimeError(f"SerpApi returned invalid JSON (HTTP {r.status_code}).") from None
+    if not isinstance(data, dict):
+        raise RuntimeError("SerpApi returned an unexpected response format.")
     if "error" in data:
         raise RuntimeError(f"SerpApi: {str(data['error']).replace(key, '[redacted]')}")
     if r.status_code >= 400:

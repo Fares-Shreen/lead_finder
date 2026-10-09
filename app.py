@@ -18,6 +18,7 @@ if sys.platform == "win32":
 import dedupe
 import config
 from search_engine import process
+from lead_display import discovery_frame
 import podio_live_checker
 import account_manager
 
@@ -371,8 +372,12 @@ with tab_search:
                     total_suspects += len(suspect_leads)
                     discovered_companies = clean_leads + suspect_leads
                     if discovered_companies:
+                        discovery_results = discovery_frame(discovered_companies)
+                        missing_evidence = discovery_results["location_evidence"].str.strip().eq("").sum()
+                        if missing_evidence:
+                            st.warning(f"{missing_evidence} returned companies have no recorded location evidence. Their Alexandria location is unverified; check that the latest scraper files are deployed.")
                         st.dataframe(
-                            pd.DataFrame(discovered_companies)[["name", "location", "location_evidence", "source", "website", "linkedin", "source_url"]],
+                            discovery_results,
                             column_config={
                                 "name": "Company",
                                 "website": st.column_config.LinkColumn("Website"),
